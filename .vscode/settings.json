@@ -1,0 +1,13 @@
+{
+    "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.useCMakePresets": "always",
+    "files.associations": {
+        "array": "cpp",
+        "string_view": "cpp",
+        "span": "cpp",
+        "vector": "cpp",
+        "*.make": "makefile"
+    },
+    "files.trimTrailingWhitespace": true
+}
