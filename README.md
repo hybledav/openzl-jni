@@ -75,6 +75,23 @@ OpenZL ships with settings to configure VSCode to work with the cmake build syst
 1. cmake-tools
 2. clangd (or any other C++ language server that works with compile_commands.json)
 
+**Important:** For proper C++ language server support, you need to generate `compile_commands.json`:
+
+The preferred method is to use the CMake Tools extension command `"CMake: Configure"`.
+
+If it doesn't work, or is too difficult to setup, you can use the manual setup:
+
+```bash
+mkdir -p cmakebuild
+cmake -B cmakebuild -DOPENZL_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
+cp cmakebuild/compile_commands.json .
+```
+
+**When to regenerate:**
+
+* After cloning the repository (first-time setup)
+* When adding/removing source files
+* When modifying `CMakeLists.txt`
 
 ### CMake Variables
 
