@@ -202,6 +202,10 @@ static bool checkArrayRange(JNIEnv* env,
     return true;
 }
 
+static constexpr int MAX_GLOBAL_CACHE = 8;
+static NativeState* globalCache[MAX_GLOBAL_CACHE];
+static int globalCacheSize = 0;
+
 thread_local NativeState* tlsCachedState = nullptr;
 
 static NativeState* getState(JNIEnv* env, jobject obj)
@@ -252,6 +256,9 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_crea
         if (tlsCachedState != nullptr) {
             state = tlsCachedState;
             tlsCachedState = nullptr;
+            state->reset();
+        } else if (globalCacheSize > 0) {
+            state = globalCache[--globalCacheSize];
             state->reset();
         } else {
             state = new NativeState();
@@ -336,6 +343,8 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destr
     state->reset();
     if (tlsCachedState == nullptr) {
         tlsCachedState = state;
+    } else if (globalCacheSize < MAX_GLOBAL_CACHE) {
+        globalCache[globalCacheSize++] = state;
     } else {
         delete state;
     }
