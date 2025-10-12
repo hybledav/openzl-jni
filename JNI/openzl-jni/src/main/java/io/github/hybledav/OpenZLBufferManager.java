@@ -2,6 +2,8 @@ package io.github.hybledav;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -94,23 +96,30 @@ public final class OpenZLBufferManager implements AutoCloseable {
     }
 
     private final class PoolState {
-        private final ArrayDeque<ByteBuffer> free = new ArrayDeque<>();
+        private final List<ArrayDeque<ByteBuffer>> buckets = new ArrayList<>();
         private final ArrayDeque<ByteBuffer> inUse = new ArrayDeque<>();
+
+        private PoolState() {
+            // Pre-create a few buckets for common sizes. We use powers of two starting from
+            // the rounded minimum capacity, capped at 16 buckets (~order of gigabytes).
+            int bucketCapacity = roundedCapacity(minimumCapacity);
+            for (int i = 0; i < 16 && bucketCapacity > 0; ++i) {
+                buckets.add(new ArrayDeque<>());
+                if (bucketCapacity >= Integer.MAX_VALUE / 2) {
+                    break;
+                }
+                bucketCapacity = Math.min(Integer.MAX_VALUE, bucketCapacity << 1);
+            }
+        }
 
         ByteBuffer borrow(int minCapacity) {
             int required = Math.max(minCapacity, minimumCapacity);
             int capacity = roundedCapacity(required);
-            for (java.util.Iterator<ByteBuffer> it = free.iterator(); it.hasNext();) {
-                ByteBuffer candidate = it.next();
-                if (candidate.capacity() >= capacity) {
-                    it.remove();
-                    candidate.clear();
-                    inUse.addLast(candidate);
-                    return candidate;
-                }
+            int bucketIndex = bucketIndex(capacity);
+            ByteBuffer buffer = pollFromBucket(bucketIndex, capacity);
+            if (buffer == null) {
+                buffer = allocateDirect(capacity);
             }
-
-            ByteBuffer buffer = allocateDirect(capacity);
             inUse.addLast(buffer);
             buffer.clear();
             return buffer;
@@ -122,13 +131,45 @@ public final class OpenZLBufferManager implements AutoCloseable {
             }
             if (inUse.removeLastOccurrence(buffer)) {
                 buffer.clear();
-                free.addLast(buffer);
+                int bucketIndex = bucketIndex(buffer.capacity());
+                buckets.get(bucketIndex).addLast(buffer);
             }
         }
 
         void clear() {
-            free.clear();
+            for (ArrayDeque<ByteBuffer> bucket : buckets) {
+                bucket.clear();
+            }
             inUse.clear();
+        }
+
+        private ByteBuffer pollFromBucket(int bucketIndex, int capacity) {
+            ArrayDeque<ByteBuffer> bucket = buckets.get(bucketIndex);
+            for (java.util.Iterator<ByteBuffer> it = bucket.iterator(); it.hasNext();) {
+                ByteBuffer candidate = it.next();
+                if (candidate.capacity() >= capacity) {
+                    it.remove();
+                    return candidate;
+                }
+            }
+            for (int i = bucketIndex + 1; i < buckets.size(); ++i) {
+                ArrayDeque<ByteBuffer> largerBucket = buckets.get(i);
+                if (!largerBucket.isEmpty()) {
+                    return largerBucket.pollFirst();
+                }
+            }
+            return null;
+        }
+
+        private int bucketIndex(int capacity) {
+            int rounded = roundedCapacity(capacity);
+            int base = roundedCapacity(minimumCapacity);
+            int index = 0;
+            while (base < rounded && index + 1 < buckets.size()) {
+                base = Math.min(Integer.MAX_VALUE, base << 1);
+                index++;
+            }
+            return index;
         }
     }
 
