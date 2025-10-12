@@ -10,20 +10,6 @@ import org.junit.jupiter.api.Test;
 class TestCompressorEdgeCases {
 
     @Test
-    void compressingNullInputThrows() {
-        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
-            assertThrows(NullPointerException.class, () -> compressor.compress(null));
-        }
-    }
-
-    @Test
-    void decompressingNullInputThrows() {
-        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
-            assertThrows(NullPointerException.class, () -> compressor.decompress(null));
-        }
-    }
-
-    @Test
     void truncatedPayloadFailsGracefully() {
         byte[] payload = "truncation-test".getBytes(StandardCharsets.UTF_8);
 

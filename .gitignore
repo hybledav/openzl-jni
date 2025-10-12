@@ -78,6 +78,7 @@ vrs_index_*
 *.zs.streams.*
 benchresult.bin*
 tmp*
+hs_err_pid*.log
 
 # Maven artifacts
 target/
