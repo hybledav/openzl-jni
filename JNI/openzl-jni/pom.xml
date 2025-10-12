@@ -43,7 +43,7 @@
         <native.library.name>openzl_jni</native.library.name>
         <native.resource.directory>lib</native.resource.directory>
         <platform.classifier>linux_amd64</platform.classifier>
-        <gpg.skip>true</gpg.skip>
+        <gpg.skip>false</gpg.skip>
     </properties>
 
     <dependencies>
