@@ -17,7 +17,7 @@
 
     <name>OpenZL JNI Bindings</name>
     <description>Java bindings for the OpenZL compressor via JNI.</description>
-    <url>https://github.com/hybledav/openzl</url>
+    <url>https://github.com/hybledav/openzl-jni</url>
 
     <licenses>
         <license>
@@ -36,9 +36,9 @@
     </developers>
 
     <scm>
-        <connection>scm:git:https://github.com/hybledav/openzl.git</connection>
-        <developerConnection>scm:git:ssh://git@github.com/hybledav/openzl.git</developerConnection>
-        <url>https://github.com/hybledav/openzl</url>
+        <connection>scm:git:https://github.com/hybledav/openzl-jni.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/hybledav/openzl-jni.git</developerConnection>
+        <url>https://github.com/hybledav/openzl-jni</url>
     </scm>
 
     <properties>
