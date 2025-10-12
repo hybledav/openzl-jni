@@ -5,6 +5,7 @@
 #include "openzl/zl_decompress.h"
 #include "openzl/zl_opaque_types.h"
 #include <limits>
+#include <memory>
 #include <new>
 #include <stdexcept>
 #include <string>
@@ -29,8 +30,42 @@ struct NativeState {
     openzl::Compressor compressor;
     ZL_CCtx* cctx = nullptr;
     ZL_DCtx* dctx = nullptr;
-    std::vector<uint8_t> inputScratch;
-    std::vector<uint8_t> outputScratch;
+    struct ScratchBuffer {
+        std::unique_ptr<uint8_t[]> data;
+        size_t capacity = 0;
+        size_t size = 0;
+
+        uint8_t* ensure(size_t required)
+        {
+            if (capacity < required) {
+                data.reset(required == 0 ? nullptr : new uint8_t[required]);
+                capacity = required;
+            }
+            return data.get();
+        }
+
+        void reset()
+        {
+            size = 0;
+        }
+
+        void setSize(size_t newSize)
+        {
+            size = newSize;
+        }
+
+        uint8_t* ptr()
+        {
+            return data.get();
+        }
+
+        const uint8_t* ptr() const
+        {
+            return data.get();
+        }
+    };
+
+    ScratchBuffer outputScratch;
 
     static void expectSuccess(ZL_Report report, const char* action)
     {
@@ -84,8 +119,7 @@ struct NativeState {
         expectSuccess(ZL_CCtx_resetParameters(cctx), "ZL_CCtx_resetParameters");
         expectSuccess(ZL_DCtx_resetParameters(dctx), "ZL_DCtx_resetParameters");
         applyDefaultParameters();
-        inputScratch.clear();
-        outputScratch.clear();
+        outputScratch.reset();
     }
 };
 
@@ -386,10 +420,10 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     size_t bound = ZL_compressBound(static_cast<size_t>(len));
-    state->outputScratch.resize(bound);
+    uint8_t* dstPtr = state->outputScratch.ensure(bound);
 
     ZL_Report result = ZL_CCtx_compress(state->cctx,
-            state->outputScratch.data(),
+            dstPtr,
             bound,
             srcPtr,
             static_cast<size_t>(len));
@@ -407,9 +441,12 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     size_t compressedSize = ZL_RES_value(result);
+    state->outputScratch.setSize(compressedSize);
     jbyteArray jresult = env->NewByteArray(static_cast<jsize>(compressedSize));
-    env->SetByteArrayRegion(jresult, 0, static_cast<jsize>(compressedSize),
-            reinterpret_cast<jbyte*>(state->outputScratch.data()));
+    if (compressedSize > 0 && state->outputScratch.ptr() != nullptr) {
+        env->SetByteArrayRegion(jresult, 0, static_cast<jsize>(compressedSize),
+                reinterpret_cast<jbyte*>(state->outputScratch.ptr()));
+    }
     return jresult;
 }
 
@@ -444,10 +481,10 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     size_t outCap = ZL_RES_value(sizeReport);
-    state->outputScratch.resize(outCap);
+    uint8_t* dstPtr = state->outputScratch.ensure(outCap);
 
     ZL_Report result = ZL_DCtx_decompress(state->dctx,
-            state->outputScratch.data(),
+            dstPtr,
             outCap,
             srcPtr,
             static_cast<size_t>(len));
@@ -464,9 +501,12 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     size_t decompressedSize = ZL_RES_value(result);
+    state->outputScratch.setSize(decompressedSize);
     jbyteArray jresult = env->NewByteArray(static_cast<jsize>(decompressedSize));
-    env->SetByteArrayRegion(jresult, 0, static_cast<jsize>(decompressedSize),
-            reinterpret_cast<jbyte*>(state->outputScratch.data()));
+    if (decompressedSize > 0 && state->outputScratch.ptr() != nullptr) {
+        env->SetByteArrayRegion(jresult, 0, static_cast<jsize>(decompressedSize),
+                reinterpret_cast<jbyte*>(state->outputScratch.ptr()));
+    }
     return jresult;
 }
 
