@@ -40,3 +40,27 @@ add_dependencies(zli
 )
 
 apply_openzl_compile_options_to_target(zli)
+
+# JNI wrapper build
+find_package(JNI REQUIRED)
+
+set(OPENZL_JNI_DIR ${PROJECT_SOURCE_DIR}/JNI)
+
+add_library(openzl_jni SHARED
+    ${OPENZL_JNI_DIR}/OpenZLCompressor.cpp
+)
+set_target_properties(openzl_jni PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/cli"
+)
+target_include_directories(openzl_jni PRIVATE
+    ${PROJECT_BINARY_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}
+    ${OPENZL_JNI_DIR}
+    ${JNI_INCLUDE_DIRS}
+)
+target_link_libraries(openzl_jni PRIVATE
+    openzl_cpp
+)
+apply_openzl_compile_options_to_target(openzl_jni)
