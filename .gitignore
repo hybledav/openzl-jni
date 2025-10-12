@@ -78,3 +78,10 @@ vrs_index_*
 *.zs.streams.*
 benchresult.bin*
 tmp*
+
+# Maven artifacts
+target/
+*/target/
+
+# Idea
+.idea/

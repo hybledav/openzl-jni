@@ -10,6 +10,86 @@ It is designed for engineers that deal with large quantities of specialized data
 
 See our [docs](https://facebook.github.io/openzl) for more information and our [quickstart guide](https://facebook.github.io/openzl/getting-started/quick-start) to get started with a guided tutorial.
 
+## OpenZL JNI Wrapper (hybledav fork)
+
+Inspired by the [zstd-jni](https://github.com/luben/zstd-jni) packaging model, this
+fork provides an unofficial Java binding for OpenZL so JVM applications can get to
+the native compressor without writing C++.
+
+* Artifact coordinates: `io.github.hybledav:openzl-jni:0.1.0`
+* Current native classifier: `linux_amd64`
+* Source location: `JNI/openzl-jni`
+* License: BSD-3-Clause (same as upstream OpenZL). See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+> **Status:** Early-access. Only Linux x86_64 binaries are packaged today. Pull
+> requests with builds for other platforms are welcome.
+
+### Quick Start
+
+Add the dependency to your Maven (or Gradle) project:
+
+```xml
+<dependency>
+  <groupId>io.github.hybledav</groupId>
+  <artifactId>openzl-jni</artifactId>
+  <version>0.1.0</version>
+  <classifier>linux_amd64</classifier>
+</dependency>
+```
+
+Use the Java wrapper exactly as you would expect:
+
+```java
+import io.github.hybledav.OpenZLCompressor;
+
+byte[] payload = ...;
+try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+    byte[] compressed = compressor.compress(payload);
+    byte[] restored   = compressor.decompress(compressed);
+    // validate restored content …
+}
+```
+
+The native library is extracted from the jar at runtime. If the packaged classifier
+does not match your environment, place `libopenzl_jni.so` on the JVM's
+`java.library.path` and `OpenZLNative` falls back to `System.loadLibrary("openzl_jni")`.
+
+### Building from Source
+
+Rebuilding the shared library that ships in the artifact is a two-step process:
+
+```bash
+cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Release
+cmake --build cmake_build --target openzl_jni
+cp cmake_build/cli/libopenzl_jni.so JNI/openzl-jni/src/main/resources/lib/linux_amd64/
+```
+
+After replacing the `.so`, regenerate the jars:
+
+```bash
+mvn -pl JNI/openzl-jni -am clean package
+```
+
+The committed binary was produced with **GCC 14.2.0** in a Debian-based container,
+using CMake’s default Release flags. When cutting a release, rebuild with the toolchain you intend
+to support and update the packaged library.
+
+### Tests
+
+The JNI module includes a 500 MB randomized round-trip test that runs during the
+Maven build:
+
+```bash
+mvn -pl JNI/openzl-jni -am test
+```
+
+### Relationship to Upstream OpenZL
+
+This repository still contains Meta’s original C++ sources. The JNI layer is an
+unofficial extension and is **not** affiliated with or endorsed by Meta Platforms.
+Please continue to reference the upstream documentation for compressor behaviour
+and consider upstream compatibility guarantees when upgrading.
+
 ## Project Status
 
 This project is under active development. The API, the compressed format, and the set of codecs and graphs included in OpenZL are all subject to (and will!) change as the project matures.
