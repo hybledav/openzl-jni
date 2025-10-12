@@ -23,6 +23,8 @@ struct CachedJNIRefs {
 
 static CachedJNIRefs gJNIRefs;
 
+static void throwNew(JNIEnv* env, jclass clazz, const char* message);
+
 struct NativeState {
     openzl::Compressor compressor;
     ZL_CCtx* cctx = nullptr;
@@ -142,6 +144,28 @@ static void clearJniRefs(JNIEnv* env)
         gJNIRefs.outOfMemoryError = nullptr;
     }
     gJNIRefs.nativeHandleField = nullptr;
+}
+
+static bool checkArrayRange(JNIEnv* env,
+        jbyteArray array,
+        jint offset,
+        jint length,
+        const char* name)
+{
+    if (array == nullptr) {
+        throwNew(env, gJNIRefs.nullPointerException, name);
+        return false;
+    }
+    if (offset < 0 || length < 0) {
+        throwNew(env, gJNIRefs.illegalArgumentException, "offset or length is negative");
+        return false;
+    }
+    jsize arrayLen = env->GetArrayLength(array);
+    if (offset > arrayLen || length > arrayLen - offset) {
+        throwNew(env, gJNIRefs.illegalArgumentException, "offset/length out of bounds");
+        return false;
+    }
+    return true;
 }
 
 thread_local NativeState* tlsCachedState = nullptr;
@@ -284,6 +308,64 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destr
     setNativeHandle(env, obj, nullptr);
 }
 
+extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compressIntoNative(JNIEnv* env,
+        jobject obj,
+        jbyteArray src,
+        jint srcOff,
+        jint srcLen,
+        jbyteArray dst,
+        jint dstOff,
+        jint dstLen)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "compressInto")) {
+        return -1;
+    }
+    if (!checkArrayRange(env, src, srcOff, srcLen, "src")) {
+        return -1;
+    }
+    if (!checkArrayRange(env, dst, dstOff, dstLen, "dst")) {
+        return -1;
+    }
+
+    void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
+    if (srcPtr == nullptr) {
+        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to access source array");
+        return -1;
+    }
+    void* dstPtr = env->GetPrimitiveArrayCritical(dst, nullptr);
+    if (dstPtr == nullptr) {
+        env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
+        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to access destination array");
+        return -1;
+    }
+
+    auto* srcBytes = static_cast<uint8_t*>(srcPtr) + srcOff;
+    auto* dstBytes = static_cast<uint8_t*>(dstPtr) + dstOff;
+
+    ZL_Report result = ZL_CCtx_compress(state->cctx,
+            dstBytes,
+            static_cast<size_t>(dstLen),
+            srcBytes,
+            static_cast<size_t>(srcLen));
+
+    env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
+
+    if (ZL_isError(result)) {
+        env->ReleasePrimitiveArrayCritical(dst, dstPtr, JNI_ABORT);
+        fprintf(stderr, "ZL_CCtx_compress failed: error code %ld\n",
+                (long)ZL_RES_code(result));
+        const char* context = ZL_CCtx_getErrorContextString(state->cctx, result);
+        if (context != nullptr) {
+            fprintf(stderr, "ZL_CCtx_compress context: %s\n", context);
+        }
+        return -1;
+    }
+
+    env->ReleasePrimitiveArrayCritical(dst, dstPtr, 0);
+    return static_cast<jint>(ZL_RES_value(result));
+}
+
 extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compress(JNIEnv* env, jobject obj, jbyteArray input)
 {
     auto* state = getState(env, obj);
@@ -386,6 +468,63 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     env->SetByteArrayRegion(jresult, 0, static_cast<jsize>(decompressedSize),
             reinterpret_cast<jbyte*>(state->outputScratch.data()));
     return jresult;
+}
+
+extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressIntoNative(JNIEnv* env,
+        jobject obj,
+        jbyteArray src,
+        jint srcOff,
+        jint srcLen,
+        jbyteArray dst,
+        jint dstOff,
+        jint dstLen)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "decompressInto")) {
+        return -1;
+    }
+    if (!checkArrayRange(env, src, srcOff, srcLen, "src")) {
+        return -1;
+    }
+    if (!checkArrayRange(env, dst, dstOff, dstLen, "dst")) {
+        return -1;
+    }
+
+    void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
+    if (srcPtr == nullptr) {
+        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to access source array");
+        return -1;
+    }
+    void* dstPtr = env->GetPrimitiveArrayCritical(dst, nullptr);
+    if (dstPtr == nullptr) {
+        env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
+        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to access destination array");
+        return -1;
+    }
+
+    auto* srcBytes = static_cast<uint8_t*>(srcPtr) + srcOff;
+    auto* dstBytes = static_cast<uint8_t*>(dstPtr) + dstOff;
+
+    ZL_Report result = ZL_DCtx_decompress(state->dctx,
+            dstBytes,
+            static_cast<size_t>(dstLen),
+            srcBytes,
+            static_cast<size_t>(srcLen));
+
+    env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
+
+    if (ZL_isError(result)) {
+        env->ReleasePrimitiveArrayCritical(dst, dstPtr, JNI_ABORT);
+        fprintf(stderr,
+                "ZL_DCtx_decompress failed: error code %ld, input size %d, output buffer size %d\n",
+                (long)ZL_RES_code(result),
+                srcLen,
+                dstLen);
+        return -1;
+    }
+
+    env->ReleasePrimitiveArrayCritical(dst, dstPtr, 0);
+    return static_cast<jint>(ZL_RES_value(result));
 }
 
 extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compressDirect(JNIEnv* env,

@@ -148,4 +148,32 @@ class TestCompressorBasics {
             assertArrayEquals(payload, restoredAfterReset, "Compressor should work after reset");
         }
     }
+
+    @Test
+    void compressIntoProvidedBufferAvoidsCopy() {
+        byte[] payload = "provided-buffer".getBytes(StandardCharsets.UTF_8);
+
+        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+            byte[] output = new byte[(int) OpenZLCompressor.maxCompressedSize(payload.length)];
+            int written = compressor.compress(payload, output);
+            assertTrue(written > 0);
+
+            byte[] restoredBuffer = new byte[payload.length + 16];
+            int restored = compressor.decompress(output, 0, written, restoredBuffer, 0, restoredBuffer.length);
+            assertEquals(payload.length, restored);
+
+            byte[] restoredExact = new byte[restored];
+            System.arraycopy(restoredBuffer, 0, restoredExact, 0, restored);
+            assertArrayEquals(payload, restoredExact);
+        }
+    }
+
+    @Test
+    void compressIntoProvidedBufferFailsWhenTooSmall() {
+        byte[] payload = new byte[32];
+        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+            byte[] tooSmall = new byte[1];
+            assertThrows(IllegalStateException.class, () -> compressor.compress(payload, tooSmall));
+        }
+    }
 }

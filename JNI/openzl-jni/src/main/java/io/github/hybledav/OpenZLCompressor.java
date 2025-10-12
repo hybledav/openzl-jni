@@ -2,6 +2,7 @@ package io.github.hybledav;
 
 import java.lang.ref.Cleaner;
 import java.nio.ByteBuffer;
+import java.util.Locale;
 import java.util.Objects;
 
 public class OpenZLCompressor implements AutoCloseable {
@@ -42,6 +43,10 @@ public class OpenZLCompressor implements AutoCloseable {
     private native long getDecompressedSizeNative(byte[] input);
     private native long getDecompressedSizeDirect(ByteBuffer src, int srcPos, int srcLen);
     private native void resetNative();
+    private native int compressIntoNative(byte[] src, int srcOffset, int srcLength,
+                                          byte[] dst, int dstOffset, int dstLength);
+    private native int decompressIntoNative(byte[] src, int srcOffset, int srcLength,
+                                            byte[] dst, int dstOffset, int dstLength);
     private native void destroyCompressor();
 
     public int compress(ByteBuffer src, ByteBuffer dst) {
@@ -125,6 +130,49 @@ public class OpenZLCompressor implements AutoCloseable {
 
     public void reset() {
         resetNative();
+    }
+
+    public int compress(byte[] input, byte[] output) {
+        Objects.requireNonNull(output, "output");
+        return compress(input, 0, input.length, output, 0, output.length);
+    }
+
+    public int compress(byte[] input, int inputOffset, int inputLength,
+            byte[] output, int outputOffset, int outputLength) {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(output, "output");
+        checkRange(input.length, inputOffset, inputLength, "input");
+        checkRange(output.length, outputOffset, outputLength, "output");
+        int written = compressIntoNative(input, inputOffset, inputLength, output, outputOffset, outputLength);
+        if (written < 0) {
+            throw new IllegalStateException("Compression failed");
+        }
+        return written;
+    }
+
+    public int decompress(byte[] input, byte[] output) {
+        Objects.requireNonNull(output, "output");
+        return decompress(input, 0, input.length, output, 0, output.length);
+    }
+
+    public int decompress(byte[] input, int inputOffset, int inputLength,
+            byte[] output, int outputOffset, int outputLength) {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(output, "output");
+        checkRange(input.length, inputOffset, inputLength, "input");
+        checkRange(output.length, outputOffset, outputLength, "output");
+        int written = decompressIntoNative(input, inputOffset, inputLength, output, outputOffset, outputLength);
+        if (written < 0) {
+            throw new IllegalStateException("Decompression failed");
+        }
+        return written;
+    }
+
+    private static void checkRange(int arrayLength, int offset, int length, String name) {
+        if (offset < 0 || length < 0 || offset > arrayLength - length) {
+            throw new IndexOutOfBoundsException(
+                    String.format(Locale.ROOT, "%s range [%d, %d) out of bounds", name, offset, offset + length));
+        }
     }
 
     private static int checkedCapacity(long size) {
