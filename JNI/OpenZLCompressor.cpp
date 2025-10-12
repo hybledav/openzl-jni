@@ -6,6 +6,7 @@
 #include "openzl/zl_opaque_types.h"
 #include <limits>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -18,6 +19,33 @@ struct NativeState {
     std::vector<uint8_t> inputScratch;
     std::vector<uint8_t> outputScratch;
 
+    static void expectSuccess(ZL_Report report, const char* action)
+    {
+        if (ZL_isError(report)) {
+            throw std::runtime_error(std::string(action)
+                    + " failed: error code "
+                    + std::to_string(static_cast<long>(ZL_RES_code(report))));
+        }
+    }
+
+    void applyDefaultParameters()
+    {
+        expectSuccess(
+                ZL_CCtx_setParameter(cctx, ZL_CParam_stickyParameters, 1),
+                "ZL_CCtx_setParameter(stickyParameters)");
+        expectSuccess(
+                ZL_CCtx_setParameter(
+                        cctx, ZL_CParam_compressionLevel, ZL_COMPRESSIONLEVEL_DEFAULT),
+                "ZL_CCtx_setParameter(compressionLevel)");
+        expectSuccess(
+                ZL_CCtx_setParameter(
+                        cctx, ZL_CParam_formatVersion, ZL_getDefaultEncodingVersion()),
+                "ZL_CCtx_setParameter(formatVersion)");
+        expectSuccess(
+                ZL_DCtx_setParameter(dctx, ZL_DParam_stickyParameters, 1),
+                "ZL_DCtx_setParameter(stickyParameters)");
+    }
+
     NativeState()
     {
         cctx = ZL_CCtx_create();
@@ -25,10 +53,7 @@ struct NativeState {
         if (!cctx || !dctx) {
             throw std::bad_alloc();
         }
-        ZL_CCtx_setParameter(cctx, ZL_CParam_stickyParameters, 1);
-        ZL_CCtx_setParameter(cctx, ZL_CParam_compressionLevel, ZL_COMPRESSIONLEVEL_DEFAULT);
-        ZL_CCtx_setParameter(cctx, ZL_CParam_formatVersion, ZL_getDefaultEncodingVersion());
-        ZL_DCtx_setParameter(dctx, ZL_DParam_stickyParameters, 1);
+        applyDefaultParameters();
     }
 
     ~NativeState()
@@ -43,8 +68,9 @@ struct NativeState {
 
     void reset()
     {
-        ZL_CCtx_resetParameters(cctx);
-        ZL_DCtx_resetParameters(dctx);
+        expectSuccess(ZL_CCtx_resetParameters(cctx), "ZL_CCtx_resetParameters");
+        expectSuccess(ZL_DCtx_resetParameters(dctx), "ZL_DCtx_resetParameters");
+        applyDefaultParameters();
         inputScratch.clear();
         outputScratch.clear();
     }
@@ -198,21 +224,6 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         return nullptr;
     }
 
-    ZL_Report reset = ZL_CCtx_resetParameters(state->cctx);
-    if (ZL_isError(reset)) {
-        fprintf(stderr, "ZL_CCtx_resetParameters failed: error code %ld\n",
-                (long)ZL_RES_code(reset));
-        return nullptr;
-    }
-    ZL_Report setFormat = ZL_CCtx_setParameter(state->cctx,
-            ZL_CParam_formatVersion,
-            ZL_getDefaultEncodingVersion());
-    if (ZL_isError(setFormat)) {
-        fprintf(stderr, "ZL_CCtx_setParameter(formatVersion) failed: error code %ld\n",
-                (long)ZL_RES_code(setFormat));
-        return nullptr;
-    }
-
     jsize len = env->GetArrayLength(input);
     void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
     if (srcPtr == nullptr) {
@@ -258,13 +269,6 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
 
     if (input == nullptr) {
         env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "input is null");
-        return nullptr;
-    }
-
-    ZL_Report reset = ZL_DCtx_resetParameters(state->dctx);
-    if (ZL_isError(reset)) {
-        fprintf(stderr, "ZL_DCtx_resetParameters failed: error code %ld\n",
-                (long)ZL_RES_code(reset));
         return nullptr;
     }
 
@@ -328,22 +332,6 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compr
         return -1;
     }
 
-    ZL_Report reset = ZL_CCtx_resetParameters(state->cctx);
-    if (ZL_isError(reset)) {
-        fprintf(stderr, "ZL_CCtx_resetParameters failed: error code %ld\n",
-                (long)ZL_RES_code(reset));
-        return -1;
-    }
-    ZL_Report setFormat = ZL_CCtx_setParameter(state->cctx,
-            ZL_CParam_formatVersion,
-            ZL_getDefaultEncodingVersion());
-    if (ZL_isError(setFormat)) {
-        fprintf(stderr,
-                "ZL_CCtx_setParameter(formatVersion) failed: error code %ld\n",
-                (long)ZL_RES_code(setFormat));
-        return -1;
-    }
-
     if (!ensureDirect(env, src, "src")) {
         return -1;
     }
@@ -388,13 +376,6 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
 {
     auto* state = getState(env, obj);
     if (!ensureState(state, "decompress")) {
-        return -1;
-    }
-
-    ZL_Report reset = ZL_DCtx_resetParameters(state->dctx);
-    if (ZL_isError(reset)) {
-        fprintf(stderr, "ZL_DCtx_resetParameters failed: error code %ld, input size %d, output buffer size %d\n",
-                (long)ZL_RES_code(reset), srcLen, dstLen);
         return -1;
     }
 
