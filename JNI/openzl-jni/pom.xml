@@ -3,16 +3,9 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>io.github.hybledav</groupId>
-        <artifactId>openzl-jni-parent</artifactId>
-        <version>0.1.0</version>
-        <relativePath>..</relativePath>
-    </parent>
-
     <groupId>io.github.hybledav</groupId>
     <artifactId>openzl-jni</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
     <packaging>jar</packaging>
 
     <name>OpenZL JNI Bindings</name>

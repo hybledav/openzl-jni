@@ -5,7 +5,7 @@ The goal is identical to the [zstd-jni](https://github.com/luben/zstd-jni) proje
 ship a single jar that lets JVM applications use the native encoder/decoder without
 building the C++ code themselves.
 
-> **Status:** 0.1.0 – Linux x86_64 binary bundled. Contributions adding other
+> **Status:** 0.1.1 – Linux x86_64 binary bundled. Contributions adding other
 > platforms are welcome.
 
 ---
@@ -16,7 +16,7 @@ building the C++ code themselves.
 <dependency>
   <groupId>io.github.hybledav</groupId>
   <artifactId>openzl-jni</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
   <classifier>linux_amd64</classifier>
 </dependency>
 ```
