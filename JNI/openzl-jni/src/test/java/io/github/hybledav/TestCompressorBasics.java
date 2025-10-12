@@ -131,4 +131,21 @@ class TestCompressorBasics {
         assertNotNull(restored, "Decompression returned null");
         return restored;
     }
+
+    @Test
+    void explicitResetKeepsCompressorFunctional() {
+        byte[] payload = "reset-roundtrip".getBytes(StandardCharsets.UTF_8);
+
+        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+            byte[] compressed = compressor.compress(payload);
+            byte[] restored = compressor.decompress(compressed);
+            assertArrayEquals(payload, restored, "Initial round-trip should succeed");
+
+            compressor.reset();
+
+            byte[] compressedAfterReset = compressor.compress(payload);
+            byte[] restoredAfterReset = compressor.decompress(compressedAfterReset);
+            assertArrayEquals(payload, restoredAfterReset, "Compressor should work after reset");
+        }
+    }
 }

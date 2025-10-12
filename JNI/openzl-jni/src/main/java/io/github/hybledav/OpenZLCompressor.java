@@ -41,6 +41,7 @@ public class OpenZLCompressor implements AutoCloseable {
                                         ByteBuffer dst, int dstPos, int dstLen);
     private native long getDecompressedSizeNative(byte[] input);
     private native long getDecompressedSizeDirect(ByteBuffer src, int srcPos, int srcLen);
+    private native void resetNative();
     private native void destroyCompressor();
 
     public int compress(ByteBuffer src, ByteBuffer dst) {
@@ -120,6 +121,10 @@ public class OpenZLCompressor implements AutoCloseable {
             throw new IllegalStateException("Failed to query decompressed size");
         }
         return result;
+    }
+
+    public void reset() {
+        resetNative();
     }
 
     private static int checkedCapacity(long size) {

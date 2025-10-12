@@ -260,6 +260,15 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_maxC
     return static_cast<jlong>(bound);
 }
 
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_resetNative(JNIEnv* env, jobject obj)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "reset")) {
+        return;
+    }
+    state->reset();
+}
+
 extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destroyCompressor(JNIEnv* env, jobject obj)
 {
     auto* state = getState(env, obj);
