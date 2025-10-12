@@ -4,6 +4,7 @@
 #include "openzl/zl_compress.h"
 #include "openzl/zl_decompress.h"
 #include "openzl/zl_opaque_types.h"
+#include <limits>
 #include <new>
 #include <string>
 #include <vector>
@@ -151,6 +152,25 @@ extern "C" JNIEXPORT jstring JNICALL Java_io_github_hybledav_OpenZLCompressor_se
     return env->NewStringUTF(result.c_str());
 }
 
+extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_maxCompressedSizeNative(JNIEnv* env,
+        jclass,
+        jint inputSize)
+{
+    if (inputSize < 0) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                "inputSize must be non-negative");
+        return -1;
+    }
+
+    size_t bound = ZL_compressBound(static_cast<size_t>(inputSize));
+    if (bound > static_cast<size_t>(std::numeric_limits<jlong>::max())) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalStateException"),
+                "Compression bound exceeds jlong capacity");
+        return -1;
+    }
+    return static_cast<jlong>(bound);
+}
+
 extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destroyCompressor(JNIEnv* env, jobject obj)
 {
     auto* state = getState(env, obj);
@@ -178,6 +198,21 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         return nullptr;
     }
 
+    ZL_Report reset = ZL_CCtx_resetParameters(state->cctx);
+    if (ZL_isError(reset)) {
+        fprintf(stderr, "ZL_CCtx_resetParameters failed: error code %ld\n",
+                (long)ZL_RES_code(reset));
+        return nullptr;
+    }
+    ZL_Report setFormat = ZL_CCtx_setParameter(state->cctx,
+            ZL_CParam_formatVersion,
+            ZL_getDefaultEncodingVersion());
+    if (ZL_isError(setFormat)) {
+        fprintf(stderr, "ZL_CCtx_setParameter(formatVersion) failed: error code %ld\n",
+                (long)ZL_RES_code(setFormat));
+        return nullptr;
+    }
+
     jsize len = env->GetArrayLength(input);
     void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
     if (srcPtr == nullptr) {
@@ -200,6 +235,10 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (ZL_isError(result)) {
         fprintf(stderr, "ZL_CCtx_compress failed: error code %ld\n",
                 (long)ZL_RES_code(result));
+        const char* context = ZL_CCtx_getErrorContextString(state->cctx, result);
+        if (context != nullptr) {
+            fprintf(stderr, "ZL_CCtx_compress context: %s\n", context);
+        }
         return nullptr;
     }
 
@@ -219,6 +258,13 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
 
     if (input == nullptr) {
         env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "input is null");
+        return nullptr;
+    }
+
+    ZL_Report reset = ZL_DCtx_resetParameters(state->dctx);
+    if (ZL_isError(reset)) {
+        fprintf(stderr, "ZL_DCtx_resetParameters failed: error code %ld\n",
+                (long)ZL_RES_code(reset));
         return nullptr;
     }
 
@@ -282,6 +328,22 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compr
         return -1;
     }
 
+    ZL_Report reset = ZL_CCtx_resetParameters(state->cctx);
+    if (ZL_isError(reset)) {
+        fprintf(stderr, "ZL_CCtx_resetParameters failed: error code %ld\n",
+                (long)ZL_RES_code(reset));
+        return -1;
+    }
+    ZL_Report setFormat = ZL_CCtx_setParameter(state->cctx,
+            ZL_CParam_formatVersion,
+            ZL_getDefaultEncodingVersion());
+    if (ZL_isError(setFormat)) {
+        fprintf(stderr,
+                "ZL_CCtx_setParameter(formatVersion) failed: error code %ld\n",
+                (long)ZL_RES_code(setFormat));
+        return -1;
+    }
+
     if (!ensureDirect(env, src, "src")) {
         return -1;
     }
@@ -306,6 +368,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compr
     if (ZL_isError(result)) {
         fprintf(stderr, "ZL_CCtx_compress failed: error code %ld\n",
                 (long)ZL_RES_code(result));
+        const char* context = ZL_CCtx_getErrorContextString(state->cctx, result);
+        if (context != nullptr) {
+            fprintf(stderr, "ZL_CCtx_compress context: %s\n", context);
+        }
         return -1;
     }
     return static_cast<jint>(ZL_RES_value(result));
@@ -322,6 +388,13 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
 {
     auto* state = getState(env, obj);
     if (!ensureState(state, "decompress")) {
+        return -1;
+    }
+
+    ZL_Report reset = ZL_DCtx_resetParameters(state->dctx);
+    if (ZL_isError(reset)) {
+        fprintf(stderr, "ZL_DCtx_resetParameters failed: error code %ld, input size %d, output buffer size %d\n",
+                (long)ZL_RES_code(reset), srcLen, dstLen);
         return -1;
     }
 
@@ -355,4 +428,62 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
         return -1;
     }
     return static_cast<jint>(ZL_RES_value(result));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getDecompressedSizeNative(JNIEnv* env,
+        jobject obj,
+        jbyteArray input)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "getDecompressedSize")) {
+        return -1;
+    }
+
+    if (input == nullptr) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "input is null");
+        return -1;
+    }
+
+    jsize len = env->GetArrayLength(input);
+    void* ptr = env->GetPrimitiveArrayCritical(input, nullptr);
+    if (ptr == nullptr) {
+        env->ThrowNew(env->FindClass("java/lang/OutOfMemoryError"),
+                "GetPrimitiveArrayCritical returned null");
+        return -1;
+    }
+
+    ZL_Report sizeReport = ZL_getDecompressedSize(ptr, static_cast<size_t>(len));
+    env->ReleasePrimitiveArrayCritical(input, ptr, JNI_ABORT);
+    if (ZL_isError(sizeReport)) {
+        return -1;
+    }
+    return static_cast<jlong>(ZL_RES_value(sizeReport));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getDecompressedSizeDirect(JNIEnv* env,
+        jobject obj,
+        jobject src,
+        jint srcPos,
+        jint srcLen)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "getDecompressedSize")) {
+        return -1;
+    }
+
+    if (!ensureDirect(env, src, "src")) {
+        return -1;
+    }
+
+    auto* srcPtr = static_cast<uint8_t*>(env->GetDirectBufferAddress(src));
+    if (!srcPtr) {
+        return -1;
+    }
+
+    srcPtr += srcPos;
+    ZL_Report sizeReport = ZL_getDecompressedSize(srcPtr, static_cast<size_t>(srcLen));
+    if (ZL_isError(sizeReport)) {
+        return -1;
+    }
+    return static_cast<jlong>(ZL_RES_value(sizeReport));
 }

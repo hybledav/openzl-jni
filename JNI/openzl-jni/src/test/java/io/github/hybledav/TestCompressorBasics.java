@@ -83,14 +83,34 @@ class TestCompressorBasics {
             compressed.limit(compressed.position());
             compressed.position(0);
 
-            ByteBuffer restored = ByteBuffer.allocateDirect(payload.length + 4096);
-            int restoredLen = compressor.decompress(compressed, restored);
-            assertEquals(payload.length, restoredLen);
+            byte[] compressedCopy = new byte[compressed.remaining()];
+            compressed.duplicate().get(compressedCopy);
+            byte[] roundTripBytes = compressor.decompress(compressedCopy);
+            assertArrayEquals(payload, roundTripBytes, "byte[] path should round-trip");
+
+            ByteBuffer compressedDirect = ByteBuffer.allocateDirect(compressedCopy.length);
+            compressedDirect.put(compressedCopy).flip();
+            ByteBuffer restored = ByteBuffer.allocateDirect(roundTripBytes.length + 4096);
+            int restoredLen = compressor.decompress(compressedDirect, restored);
+            assertEquals(roundTripBytes.length, restoredLen);
 
             restored.flip();
-            byte[] roundTrip = new byte[restoredLen];
-            restored.get(roundTrip);
-            assertArrayEquals(payload, roundTrip);
+            byte[] directRoundTrip = new byte[restoredLen];
+            restored.get(directRoundTrip);
+            assertArrayEquals(roundTripBytes, directRoundTrip);
+        }
+    }
+
+    @Test
+    void maxCompressedSizeProvidesSafeBound() {
+        byte[] payload = new byte[32_768];
+        new Random(5678).nextBytes(payload);
+
+        long bound = OpenZLCompressor.maxCompressedSize(payload.length);
+        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+            byte[] compressed = compressor.compress(payload);
+            assertNotNull(compressed);
+            assertTrue(bound >= compressed.length, "Bound should be at least compressed size");
         }
     }
 
