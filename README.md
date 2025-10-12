@@ -27,6 +27,8 @@ building the C++ code themselves.
   The main jar bundles the JNI classes; the classifier provides the shared
   library. If you ship your own build, drop it on `java.library.path` and the code
   falls back to `System.loadLibrary("openzl_jni")`.
+- `OpenZLBufferManager` hands out pooled direct `ByteBuffer`s so you can stay
+  off-heap without fighting JVM allocation churn.
 
 ## Usage
 
@@ -39,7 +41,33 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
     byte[] restored   = compressor.decompress(compressed);
     // verify the round‑trip
 }
+
+// Direct buffers for zero-copy performance
+try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+    var src = java.nio.ByteBuffer.allocateDirect(payload.length);
+    src.put(payload).flip();
+    var compressed = java.nio.ByteBuffer.allocateDirect(payload.length + 4096);
+    compressor.compress(src, compressed);
+}
+
+// Reusable buffer manager
+try (OpenZLBufferManager buffers = OpenZLBufferManager.builder().build();
+        OpenZLCompressor compressor = new OpenZLCompressor()) {
+    var src = buffers.acquire(payload.length);
+    src.put(payload).flip();
+    var compressed = compressor.compress(src, buffers);
+    buffers.release(src);
+
+    var restored = compressor.decompress(compressed, buffers);
+    buffers.release(compressed);
+    buffers.release(restored);
+}
 ```
+
+Call `release` once you're done with a buffer so the manager can recycle it.
+`OpenZLCompressor.maxCompressedSize(inputLength)` exposes `ZL_compressBound`, and
+`OpenZLBufferManager` now has `acquireForCompression`/`acquireForDecompression`
+helpers for manual sizing when you want to preallocate buffers yourself.
 
 ## Building the JNI module
 
@@ -60,15 +88,6 @@ rebuild the `.so` with your toolchain before cutting a release.
 
 `JNI/openzl-jni/src/test/java/io/github/hybledav/TestCompress500MB.java` performs a
 500 MB pseudo-random round‑trip as part of `mvn test`.
-
-## Releasing
-
-```bash
-mvn -f JNI/pom.xml -pl openzl-jni -am clean package \
-    org.sonatype.central:central-publishing-maven-plugin:publish
-```
-
-Then release the staging repository in the Sonatype portal.
 
 ## License & attribution
 
