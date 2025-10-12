@@ -43,6 +43,7 @@
         <native.library.name>openzl_jni</native.library.name>
         <native.resource.directory>lib</native.resource.directory>
         <platform.classifier>linux_amd64</platform.classifier>
+        <gpg.skip>true</gpg.skip>
     </properties>
 
     <dependencies>
@@ -148,7 +149,7 @@
                             <goal>sign</goal>
                         </goals>
                         <configuration>
-                            <skip>false</skip>
+                            <skip>${gpg.skip}</skip>
                         </configuration>
                     </execution>
                 </executions>
