@@ -12,6 +12,17 @@
 
 namespace {
 
+struct CachedJNIRefs {
+    jclass compressorClass = nullptr;
+    jfieldID nativeHandleField = nullptr;
+    jclass nullPointerException = nullptr;
+    jclass illegalArgumentException = nullptr;
+    jclass illegalStateException = nullptr;
+    jclass outOfMemoryError = nullptr;
+};
+
+static CachedJNIRefs gJNIRefs;
+
 struct NativeState {
     openzl::Compressor compressor;
     ZL_CCtx* cctx = nullptr;
@@ -76,24 +87,79 @@ struct NativeState {
     }
 };
 
-thread_local NativeState* tlsCachedState = nullptr;
-
-static jfieldID getNativeHandleField(JNIEnv* env, jobject obj)
+static jclass makeGlobalClassRef(JNIEnv* env, const char* name)
 {
-    jclass cls = env->GetObjectClass(obj);
-    return env->GetFieldID(cls, "nativeHandle", "J");
+    jclass local = env->FindClass(name);
+    if (!local) {
+        return nullptr;
+    }
+    jclass global = static_cast<jclass>(env->NewGlobalRef(local));
+    env->DeleteLocalRef(local);
+    return global;
 }
+
+static bool initJniRefs(JNIEnv* env)
+{
+    gJNIRefs.compressorClass = makeGlobalClassRef(env, "io/github/hybledav/OpenZLCompressor");
+    if (!gJNIRefs.compressorClass) {
+        return false;
+    }
+    gJNIRefs.nativeHandleField = env->GetFieldID(gJNIRefs.compressorClass, "nativeHandle", "J");
+    if (!gJNIRefs.nativeHandleField) {
+        return false;
+    }
+    gJNIRefs.nullPointerException = makeGlobalClassRef(env, "java/lang/NullPointerException");
+    gJNIRefs.illegalArgumentException = makeGlobalClassRef(env, "java/lang/IllegalArgumentException");
+    gJNIRefs.illegalStateException = makeGlobalClassRef(env, "java/lang/IllegalStateException");
+    gJNIRefs.outOfMemoryError = makeGlobalClassRef(env, "java/lang/OutOfMemoryError");
+    if (!gJNIRefs.nullPointerException || !gJNIRefs.illegalArgumentException
+            || !gJNIRefs.illegalStateException || !gJNIRefs.outOfMemoryError) {
+        return false;
+    }
+    return true;
+}
+
+static void clearJniRefs(JNIEnv* env)
+{
+    if (gJNIRefs.compressorClass) {
+        env->DeleteGlobalRef(gJNIRefs.compressorClass);
+        gJNIRefs.compressorClass = nullptr;
+    }
+    if (gJNIRefs.nullPointerException) {
+        env->DeleteGlobalRef(gJNIRefs.nullPointerException);
+        gJNIRefs.nullPointerException = nullptr;
+    }
+    if (gJNIRefs.illegalArgumentException) {
+        env->DeleteGlobalRef(gJNIRefs.illegalArgumentException);
+        gJNIRefs.illegalArgumentException = nullptr;
+    }
+    if (gJNIRefs.illegalStateException) {
+        env->DeleteGlobalRef(gJNIRefs.illegalStateException);
+        gJNIRefs.illegalStateException = nullptr;
+    }
+    if (gJNIRefs.outOfMemoryError) {
+        env->DeleteGlobalRef(gJNIRefs.outOfMemoryError);
+        gJNIRefs.outOfMemoryError = nullptr;
+    }
+    gJNIRefs.nativeHandleField = nullptr;
+}
+
+thread_local NativeState* tlsCachedState = nullptr;
 
 static NativeState* getState(JNIEnv* env, jobject obj)
 {
-    jfieldID fid = getNativeHandleField(env, obj);
-    return reinterpret_cast<NativeState*>(env->GetLongField(obj, fid));
+    return reinterpret_cast<NativeState*>(
+            env->GetLongField(obj, gJNIRefs.nativeHandleField));
 }
 
 static void setNativeHandle(JNIEnv* env, jobject obj, NativeState* value)
 {
-    jfieldID fid = getNativeHandleField(env, obj);
-    env->SetLongField(obj, fid, reinterpret_cast<jlong>(value));
+    env->SetLongField(obj, gJNIRefs.nativeHandleField, reinterpret_cast<jlong>(value));
+}
+
+static void throwNew(JNIEnv* env, jclass clazz, const char* message)
+{
+    env->ThrowNew(clazz, message);
 }
 
 static bool ensureState(NativeState* state, const char* method)
@@ -108,13 +174,12 @@ static bool ensureState(NativeState* state, const char* method)
 static bool ensureDirect(JNIEnv* env, jobject buffer, const char* name)
 {
     if (buffer == nullptr) {
-        env->ThrowNew(env->FindClass("java/lang/NullPointerException"), name);
+        throwNew(env, gJNIRefs.nullPointerException, name);
         return false;
     }
     void* addr = env->GetDirectBufferAddress(buffer);
     if (addr == nullptr) {
-        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
-                "ByteBuffer must be direct");
+        throwNew(env, gJNIRefs.illegalArgumentException, "ByteBuffer must be direct");
         return false;
     }
     return true;
@@ -183,15 +248,13 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_maxC
         jint inputSize)
 {
     if (inputSize < 0) {
-        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
-                "inputSize must be non-negative");
+        throwNew(env, gJNIRefs.illegalArgumentException, "inputSize must be non-negative");
         return -1;
     }
 
     size_t bound = ZL_compressBound(static_cast<size_t>(inputSize));
     if (bound > static_cast<size_t>(std::numeric_limits<jlong>::max())) {
-        env->ThrowNew(env->FindClass("java/lang/IllegalStateException"),
-                "Compression bound exceeds jlong capacity");
+        throwNew(env, gJNIRefs.illegalStateException, "Compression bound exceeds jlong capacity");
         return -1;
     }
     return static_cast<jlong>(bound);
@@ -220,15 +283,14 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     if (input == nullptr) {
-        env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "input is null");
+        throwNew(env, gJNIRefs.nullPointerException, "input is null");
         return nullptr;
     }
 
     jsize len = env->GetArrayLength(input);
     void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
     if (srcPtr == nullptr) {
-        env->ThrowNew(env->FindClass("java/lang/OutOfMemoryError"),
-                "GetPrimitiveArrayCritical returned null");
+        throwNew(env, gJNIRefs.outOfMemoryError, "GetPrimitiveArrayCritical returned null");
         return nullptr;
     }
 
@@ -268,15 +330,14 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     if (input == nullptr) {
-        env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "input is null");
+        throwNew(env, gJNIRefs.nullPointerException, "input is null");
         return nullptr;
     }
 
     jsize len = env->GetArrayLength(input);
     void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
     if (srcPtr == nullptr) {
-        env->ThrowNew(env->FindClass("java/lang/OutOfMemoryError"),
-                "GetPrimitiveArrayCritical returned null");
+        throwNew(env, gJNIRefs.outOfMemoryError, "GetPrimitiveArrayCritical returned null");
         return nullptr;
     }
 
@@ -421,15 +482,14 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getD
     }
 
     if (input == nullptr) {
-        env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "input is null");
+        throwNew(env, gJNIRefs.nullPointerException, "input is null");
         return -1;
     }
 
     jsize len = env->GetArrayLength(input);
     void* ptr = env->GetPrimitiveArrayCritical(input, nullptr);
     if (ptr == nullptr) {
-        env->ThrowNew(env->FindClass("java/lang/OutOfMemoryError"),
-                "GetPrimitiveArrayCritical returned null");
+        throwNew(env, gJNIRefs.outOfMemoryError, "GetPrimitiveArrayCritical returned null");
         return -1;
     }
 
@@ -467,4 +527,31 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getD
         return -1;
     }
     return static_cast<jlong>(ZL_RES_value(sizeReport));
+}
+
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*)
+{
+    void* envVoid = nullptr;
+    if (vm->GetEnv(&envVoid, JNI_VERSION_1_8) != JNI_OK) {
+        return JNI_ERR;
+    }
+    JNIEnv* env = static_cast<JNIEnv*>(envVoid);
+    if (!initJniRefs(env)) {
+        clearJniRefs(env);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+        return JNI_ERR;
+    }
+    return JNI_VERSION_1_8;
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*)
+{
+    void* envVoid = nullptr;
+    if (vm->GetEnv(&envVoid, JNI_VERSION_1_8) != JNI_OK) {
+        return;
+    }
+    JNIEnv* env = static_cast<JNIEnv*>(envVoid);
+    clearJniRefs(env);
 }
