@@ -39,7 +39,17 @@ struct NativeState {
             ZL_DCtx_free(dctx);
         }
     }
+
+    void reset()
+    {
+        ZL_CCtx_resetParameters(cctx);
+        ZL_DCtx_resetParameters(dctx);
+        inputScratch.clear();
+        outputScratch.clear();
+    }
 };
+
+thread_local NativeState* tlsCachedState = nullptr;
 
 static jfieldID getNativeHandleField(JNIEnv* env, jobject obj)
 {
@@ -88,7 +98,14 @@ static bool ensureDirect(JNIEnv* env, jobject buffer, const char* name)
 extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_createCompressor(JNIEnv*, jobject)
 {
     try {
-        auto* state = new NativeState();
+        NativeState* state = nullptr;
+        if (tlsCachedState != nullptr) {
+            state = tlsCachedState;
+            tlsCachedState = nullptr;
+            state->reset();
+        } else {
+            state = new NativeState();
+        }
         return reinterpret_cast<jlong>(state);
     } catch (const std::exception& e) {
         fprintf(stderr, "Failed to initialize NativeState: %s\n", e.what());
@@ -140,7 +157,12 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destr
     if (!ensureState(state, "destroy")) {
         return;
     }
-    delete state;
+    state->reset();
+    if (tlsCachedState == nullptr) {
+        tlsCachedState = state;
+    } else {
+        delete state;
+    }
     setNativeHandle(env, obj, nullptr);
 }
 
