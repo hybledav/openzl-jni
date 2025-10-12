@@ -23,6 +23,20 @@ class TestCompressorBasics {
     }
 
     @Test
+    void roundTripEmptyPayload() {
+        byte[] payload = new byte[0];
+
+        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+            byte[] compressed = compressor.compress(payload);
+            assertNotNull(compressed, "Compression should handle empty payloads");
+
+            byte[] restored = compressor.decompress(compressed);
+            assertNotNull(restored, "Decompression should return an empty buffer");
+            assertArrayEquals(payload, restored);
+        }
+    }
+
+    @Test
     void roundTripHighlyCompressiblePayload() {
         byte[] payload = new byte[128 * 1024];
         for (int i = 0; i < payload.length; ++i) {
