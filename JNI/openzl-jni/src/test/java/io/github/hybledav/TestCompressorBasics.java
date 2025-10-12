@@ -2,6 +2,7 @@ package io.github.hybledav;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
@@ -63,6 +64,33 @@ class TestCompressorBasics {
         try (OpenZLCompressor compressor = new OpenZLCompressor()) {
             assertArrayEquals(first, decompressRoundTrip(compressor, first));
             assertArrayEquals(second, decompressRoundTrip(compressor, second));
+        }
+    }
+
+    @Test
+    void roundTripWithDirectBuffers() {
+        byte[] payload = new byte[64_000];
+        new Random(12345).nextBytes(payload);
+
+        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+            ByteBuffer src = ByteBuffer.allocateDirect(payload.length);
+            src.put(payload).flip();
+
+            ByteBuffer compressed = ByteBuffer.allocateDirect(payload.length + 4096);
+            int written = compressor.compress(src, compressed);
+            assertTrue(written > 0);
+
+            compressed.limit(compressed.position());
+            compressed.position(0);
+
+            ByteBuffer restored = ByteBuffer.allocateDirect(payload.length + 4096);
+            int restoredLen = compressor.decompress(compressed, restored);
+            assertEquals(payload.length, restoredLen);
+
+            restored.flip();
+            byte[] roundTrip = new byte[restoredLen];
+            restored.get(roundTrip);
+            assertArrayEquals(payload, roundTrip);
         }
     }
 

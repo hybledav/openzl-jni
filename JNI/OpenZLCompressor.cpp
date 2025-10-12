@@ -4,6 +4,7 @@
 #include "openzl/zl_compress.h"
 #include "openzl/zl_decompress.h"
 #include "openzl/zl_opaque_types.h"
+#include <new>
 #include <string>
 #include <vector>
 
@@ -65,6 +66,21 @@ static bool ensureState(NativeState* state, const char* method)
     }
     fprintf(stderr, "OpenZLCompressor.%s called after close()\n", method);
     return false;
+}
+
+static bool ensureDirect(JNIEnv* env, jobject buffer, const char* name)
+{
+    if (buffer == nullptr) {
+        env->ThrowNew(env->FindClass("java/lang/NullPointerException"), name);
+        return false;
+    }
+    void* addr = env->GetDirectBufferAddress(buffer);
+    if (addr == nullptr) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                "ByteBuffer must be direct");
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -217,4 +233,93 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     env->SetByteArrayRegion(jresult, 0, static_cast<jsize>(decompressedSize),
             reinterpret_cast<jbyte*>(state->outputScratch.data()));
     return jresult;
+}
+
+extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compressDirect(JNIEnv* env,
+        jobject obj,
+        jobject src,
+        jint srcPos,
+        jint srcLen,
+        jobject dst,
+        jint dstPos,
+        jint dstLen)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "compress")) {
+        return -1;
+    }
+
+    if (!ensureDirect(env, src, "src")) {
+        return -1;
+    }
+    if (!ensureDirect(env, dst, "dst")) {
+        return -1;
+    }
+
+    auto* srcPtr = static_cast<uint8_t*>(env->GetDirectBufferAddress(src));
+    auto* dstPtr = static_cast<uint8_t*>(env->GetDirectBufferAddress(dst));
+    if (!srcPtr || !dstPtr) {
+        return -1;
+    }
+
+    srcPtr += srcPos;
+    dstPtr += dstPos;
+
+    ZL_Report result = ZL_CCtx_compress(state->cctx,
+            dstPtr,
+            static_cast<size_t>(dstLen),
+            srcPtr,
+            static_cast<size_t>(srcLen));
+    if (ZL_isError(result)) {
+        fprintf(stderr, "ZL_CCtx_compress failed: error code %ld\n",
+                (long)ZL_RES_code(result));
+        return -1;
+    }
+    return static_cast<jint>(ZL_RES_value(result));
+}
+
+extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressDirect(JNIEnv* env,
+        jobject obj,
+        jobject src,
+        jint srcPos,
+        jint srcLen,
+        jobject dst,
+        jint dstPos,
+        jint dstLen)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "decompress")) {
+        return -1;
+    }
+
+    if (!ensureDirect(env, src, "src")) {
+        return -1;
+    }
+    if (!ensureDirect(env, dst, "dst")) {
+        return -1;
+    }
+
+    auto* srcPtr = static_cast<uint8_t*>(env->GetDirectBufferAddress(src));
+    auto* dstPtr = static_cast<uint8_t*>(env->GetDirectBufferAddress(dst));
+    if (!srcPtr || !dstPtr) {
+        return -1;
+    }
+
+    srcPtr += srcPos;
+    dstPtr += dstPos;
+
+    ZL_Report result = ZL_DCtx_decompress(state->dctx,
+            dstPtr,
+            static_cast<size_t>(dstLen),
+            srcPtr,
+            static_cast<size_t>(srcLen));
+    if (ZL_isError(result)) {
+        fprintf(stderr,
+                "ZL_DCtx_decompress failed: error code %ld, input size %d, output buffer size %d\n",
+                (long)ZL_RES_code(result),
+                srcLen,
+                dstLen);
+        return -1;
+    }
+    return static_cast<jint>(ZL_RES_value(result));
 }

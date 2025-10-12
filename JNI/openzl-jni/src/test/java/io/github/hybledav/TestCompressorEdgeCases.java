@@ -3,6 +3,7 @@ package io.github.hybledav;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,17 @@ class TestCompressorEdgeCases {
             assertNull(
                     compressor.decompress(truncated),
                     "Truncated payload should return null instead of throwing");
+        }
+    }
+
+    @Test
+    void nonDirectBuffersAreRejected() {
+        ByteBuffer heapSrc = ByteBuffer.wrap(new byte[16]);
+        ByteBuffer heapDst = ByteBuffer.wrap(new byte[32]);
+
+        try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+            assertThrows(IllegalArgumentException.class, () -> compressor.compress(heapSrc, heapDst));
+            assertThrows(IllegalArgumentException.class, () -> compressor.decompress(heapSrc, heapDst));
         }
     }
 
