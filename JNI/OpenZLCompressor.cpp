@@ -179,9 +179,12 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     jsize len = env->GetArrayLength(input);
-    state->inputScratch.resize(len);
-    env->GetByteArrayRegion(input, 0, len,
-            reinterpret_cast<jbyte*>(state->inputScratch.data()));
+    void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
+    if (srcPtr == nullptr) {
+        env->ThrowNew(env->FindClass("java/lang/OutOfMemoryError"),
+                "GetPrimitiveArrayCritical returned null");
+        return nullptr;
+    }
 
     size_t bound = ZL_compressBound(static_cast<size_t>(len));
     state->outputScratch.resize(bound);
@@ -189,8 +192,10 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     ZL_Report result = ZL_CCtx_compress(state->cctx,
             state->outputScratch.data(),
             bound,
-            state->inputScratch.data(),
+            srcPtr,
             static_cast<size_t>(len));
+
+    env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
 
     if (ZL_isError(result)) {
         fprintf(stderr, "ZL_CCtx_compress failed: error code %ld\n",
@@ -218,17 +223,21 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     jsize len = env->GetArrayLength(input);
-    state->inputScratch.resize(len);
-    env->GetByteArrayRegion(input, 0, len,
-            reinterpret_cast<jbyte*>(state->inputScratch.data()));
+    void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
+    if (srcPtr == nullptr) {
+        env->ThrowNew(env->FindClass("java/lang/OutOfMemoryError"),
+                "GetPrimitiveArrayCritical returned null");
+        return nullptr;
+    }
 
-    ZL_Report sizeReport = ZL_getDecompressedSize(state->inputScratch.data(),
+    ZL_Report sizeReport = ZL_getDecompressedSize(srcPtr,
             static_cast<size_t>(len));
     if (ZL_isError(sizeReport)) {
         fprintf(stderr,
                 "ZL_getDecompressedSize failed: error code %ld, input size %d\n",
                 (long)ZL_RES_code(sizeReport),
                 len);
+        env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
         return nullptr;
     }
 
@@ -238,8 +247,10 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     ZL_Report result = ZL_DCtx_decompress(state->dctx,
             state->outputScratch.data(),
             outCap,
-            state->inputScratch.data(),
+            srcPtr,
             static_cast<size_t>(len));
+
+    env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
 
     if (ZL_isError(result)) {
         fprintf(stderr,
