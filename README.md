@@ -69,6 +69,21 @@ Call `release` once you're done with a buffer so the manager can recycle it.
 `OpenZLBufferManager` now has `acquireForCompression`/`acquireForDecompression`
 helpers for manual sizing when you want to preallocate buffers yourself.
 
+Graphs and typed payloads are also first-class citizens:
+
+```java
+int[] measurements = ...;
+
+try (OpenZLCompressor compressor = new OpenZLCompressor(OpenZLGraph.NUMERIC)) {
+    byte[] compressed = compressor.compressInts(measurements);
+    int[] restored = compressor.decompressInts(compressed);
+
+    OpenZLCompressionInfo info = compressor.inspect(compressed);
+    System.out.printf("compressed=%d bytes, flavor=%s, graph=%s, ratio=%.2f%%%n",
+            info.compressedSize(), info.flavor(), info.graph(), info.compressionRatio() * 100);
+}
+```
+
 ## Building the JNI module
 
 ```bash

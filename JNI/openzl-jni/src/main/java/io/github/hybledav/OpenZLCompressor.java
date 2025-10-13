@@ -8,16 +8,42 @@ import java.util.Objects;
 public class OpenZLCompressor implements AutoCloseable {
     private static final Cleaner CLEANER = Cleaner.create();
 
+    private final OpenZLGraph graph;
     private long nativeHandle;
     private final Cleaner.Cleanable cleanable;
+    private static final int META_ORIGINAL_SIZE = 0;
+    private static final int META_COMPRESSED_SIZE = 1;
+    private static final int META_OUTPUT_TYPE = 2;
+    private static final int META_GRAPH_ID = 3;
+    private static final int META_ELEMENT_COUNT = 4;
+    private static final int META_FORMAT_VERSION = 5;
+    private static final int META_LENGTH = 6;
 
     public OpenZLCompressor() {
+        this(OpenZLGraph.ZSTD);
+    }
+
+    public OpenZLCompressor(OpenZLGraph graph) {
+        this.graph = Objects.requireNonNull(graph, "graph");
         OpenZLNative.load();
-        nativeHandle = createCompressor();
+        nativeHandle = nativeCreate(graph.id());
+        if (nativeHandle == 0) {
+            throw new IllegalStateException("Unable to initialise OpenZL native compressor");
+        }
         cleanable = CLEANER.register(this, new Releaser(this));
     }
 
-    private native long createCompressor();
+    public OpenZLGraph graph() {
+        return graph;
+    }
+
+    private void ensureOpen() {
+        if (nativeHandle == 0) {
+            throw new IllegalStateException("Compressor already closed");
+        }
+    }
+
+    private native long nativeCreate(int graphId);
     public native void setParameter(int param, int value);
     public native int getParameter(int param);
     public native String serialize();
@@ -167,6 +193,130 @@ public class OpenZLCompressor implements AutoCloseable {
         }
         return written;
     }
+
+    public byte[] compressInts(int[] data) {
+        ensureOpen();
+        Objects.requireNonNull(data, "data");
+        byte[] result = compressIntsNative(data);
+        if (result == null) {
+            throw new IllegalStateException("Failed to compress int array");
+        }
+        return result;
+    }
+
+    public byte[] compressLongs(long[] data) {
+        ensureOpen();
+        Objects.requireNonNull(data, "data");
+        byte[] result = compressLongsNative(data);
+        if (result == null) {
+            throw new IllegalStateException("Failed to compress long array");
+        }
+        return result;
+    }
+
+    public byte[] compressFloats(float[] data) {
+        ensureOpen();
+        Objects.requireNonNull(data, "data");
+        byte[] result = compressFloatsNative(data);
+        if (result == null) {
+            throw new IllegalStateException("Failed to compress float array");
+        }
+        return result;
+    }
+
+    public byte[] compressDoubles(double[] data) {
+        ensureOpen();
+        Objects.requireNonNull(data, "data");
+        byte[] result = compressDoublesNative(data);
+        if (result == null) {
+            throw new IllegalStateException("Failed to compress double array");
+        }
+        return result;
+    }
+
+    public int[] decompressInts(byte[] compressed) {
+        ensureOpen();
+        Objects.requireNonNull(compressed, "compressed");
+        int[] result = decompressIntsNative(compressed);
+        if (result == null) {
+            throw new IllegalStateException("Failed to decompress int array");
+        }
+        return result;
+    }
+
+    public long[] decompressLongs(byte[] compressed) {
+        ensureOpen();
+        Objects.requireNonNull(compressed, "compressed");
+        long[] result = decompressLongsNative(compressed);
+        if (result == null) {
+            throw new IllegalStateException("Failed to decompress long array");
+        }
+        return result;
+    }
+
+    public float[] decompressFloats(byte[] compressed) {
+        ensureOpen();
+        Objects.requireNonNull(compressed, "compressed");
+        float[] result = decompressFloatsNative(compressed);
+        if (result == null) {
+            throw new IllegalStateException("Failed to decompress float array");
+        }
+        return result;
+    }
+
+    public double[] decompressDoubles(byte[] compressed) {
+        ensureOpen();
+        Objects.requireNonNull(compressed, "compressed");
+        double[] result = decompressDoublesNative(compressed);
+        if (result == null) {
+            throw new IllegalStateException("Failed to decompress double array");
+        }
+        return result;
+    }
+
+    public OpenZLCompressionInfo inspect(byte[] compressed) {
+        ensureOpen();
+        Objects.requireNonNull(compressed, "compressed");
+        long[] meta = describeFrameNative(compressed);
+        return toCompressionInfo(meta);
+    }
+
+    public OpenZLCompressionInfo inspect(ByteBuffer compressed) {
+        ensureOpen();
+        requireDirect(compressed, "compressed");
+        ByteBuffer view = compressed.duplicate();
+        long[] meta = describeFrameDirectNative(view, view.position(), view.remaining());
+        return toCompressionInfo(meta);
+    }
+
+    private OpenZLCompressionInfo toCompressionInfo(long[] meta) {
+        if (meta == null || meta.length < META_LENGTH) {
+            throw new IllegalStateException("Unable to inspect compressed frame");
+        }
+        OpenZLCompressionInfo.DataFlavor flavor =
+                OpenZLCompressionInfo.DataFlavor.fromNative((int) meta[META_OUTPUT_TYPE]);
+        OpenZLGraph inferredGraph = OpenZLGraph.fromNativeId((int) meta[META_GRAPH_ID]);
+        long elementCount = meta[META_ELEMENT_COUNT];
+        int formatVersion = (int) meta[META_FORMAT_VERSION];
+        return new OpenZLCompressionInfo(
+                meta[META_ORIGINAL_SIZE],
+                meta[META_COMPRESSED_SIZE],
+                inferredGraph,
+                flavor,
+                elementCount,
+                formatVersion);
+    }
+
+    private native byte[] compressIntsNative(int[] data);
+    private native byte[] compressLongsNative(long[] data);
+    private native byte[] compressFloatsNative(float[] data);
+    private native byte[] compressDoublesNative(double[] data);
+    private native int[] decompressIntsNative(byte[] data);
+    private native long[] decompressLongsNative(byte[] data);
+    private native float[] decompressFloatsNative(byte[] data);
+    private native double[] decompressDoublesNative(byte[] data);
+    private native long[] describeFrameNative(byte[] data);
+    private native long[] describeFrameDirectNative(ByteBuffer data, int position, int length);
 
     private static void checkRange(int arrayLength, int offset, int length, String name) {
         if (offset < 0 || length < 0 || offset > arrayLength - length) {
