@@ -22,6 +22,7 @@ cmake -S . -B cmake_build -DCMAKE_BUILD_TYPE=Release
 cmake --build cmake_build --target openzl_jni
 
 # refresh the bundled shared object and run the Maven build
+mkdir -p JNI/openzl-jni/src/main/resources/lib/linux_amd64
 cp cmake_build/cli/libopenzl_jni.so JNI/openzl-jni/src/main/resources/lib/linux_amd64/
 mvn -pl JNI/openzl-jni -am clean package
 ```

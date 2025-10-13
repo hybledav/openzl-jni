@@ -20,6 +20,7 @@ jobs:
         run: |
           cmake -S . -B cmake_build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build cmake_build --target openzl_jni
+          mkdir -p JNI/openzl-jni/src/main/resources/lib/linux_amd64
           cp cmake_build/cli/libopenzl_jni.so JNI/openzl-jni/src/main/resources/lib/linux_amd64/
       - name: Run JNI unit tests
         run: mvn -f JNI/pom.xml -pl openzl-jni -am -Dgpg.skip=true clean test
