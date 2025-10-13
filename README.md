@@ -58,7 +58,7 @@
 - **Buffer pooling built in** – `OpenZLBufferManager` keeps hot paths off-heap without churn.
 - **Compression intelligence** – inspect frames for inferred graph, format version, and element counts before decoding.
 - **Multi-platform CI** – GitHub Actions build classifier jars for Linux (x64/ARM), macOS (x64/ARM), and Windows.
-- **Drop-in publishing** – artifacts are ready to be staged to Maven Central or GitHub Packages as part of your release train.
+- **Self-contained build** – produces Maven-style jars and classifier artifacts ready to consume directly in your projects.
 
 ---
 
