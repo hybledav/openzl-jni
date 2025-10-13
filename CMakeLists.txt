@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20.2 FATAL_ERROR)
+project(openzl_jni_native LANGUAGES C CXX)
 set(OPENZL_BUILD_TESTS OFF CACHE BOOL "Don't build OpenZL tests" FORCE)
 set(OPENZL_BUILD_BENCHMARKS OFF CACHE BOOL "Don't build OpenZL benchmarks" FORCE)
 set(OPENZL_BUILD_MODE opt CACHE STRING "OpenZL build mode" FORCE)
