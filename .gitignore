@@ -38,6 +38,7 @@ libzl.a
 libzl.so
 libopenzl.a
 libopenzl.so
+JNI/openzl-jni/src/main/resources/lib/**/*.so
 
 # dependencies
 /deps/*
