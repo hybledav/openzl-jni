@@ -1,0 +1,10 @@
+OpenZL JNI Wrapper (hybledav fork)
+----------------------------------
+
+This repository bundles the upstream OpenZL project, copyright
+Meta Platforms, Inc. and affiliates, released under the BSD
+3-Clause License (see LICENSE).
+
+Additional JNI bindings, Maven packaging metadata, and build
+instructions are © 2024 hybledav and contributors.
+These modifications are provided under the same BSD 3-Clause License.
