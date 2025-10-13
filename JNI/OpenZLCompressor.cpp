@@ -718,9 +718,9 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
             static_cast<size_t>(len));
     if (ZL_isError(sizeReport)) {
         fprintf(stderr,
-                "ZL_getDecompressedSize failed: error code %ld, input size %d\n",
+                "ZL_getDecompressedSize failed: error code %ld, input size %ld\n",
                 (long)ZL_RES_code(sizeReport),
-                len);
+                (long)len);
         env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
         return nullptr;
     }
@@ -738,9 +738,9 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
 
     if (ZL_isError(result)) {
         fprintf(stderr,
-                "ZL_DCtx_decompress failed: error code %ld, input size %d, output buffer size %zu\n",
+                "ZL_DCtx_decompress failed: error code %ld, input size %ld, output buffer size %zu\n",
                 (long)ZL_RES_code(result),
-                len,
+                (long)len,
                 outCap);
         return nullptr;
     }
@@ -1172,10 +1172,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
     if (ZL_isError(result)) {
         env->ReleasePrimitiveArrayCritical(dst, dstPtr, JNI_ABORT);
         fprintf(stderr,
-                "ZL_DCtx_decompress failed: error code %ld, input size %d, output buffer size %d\n",
+                "ZL_DCtx_decompress failed: error code %ld, input size %ld, output buffer size %ld\n",
                 (long)ZL_RES_code(result),
-                srcLen,
-                dstLen);
+                (long)srcLen,
+                (long)dstLen);
         return -1;
     }
 
@@ -1267,10 +1267,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
             static_cast<size_t>(srcLen));
     if (ZL_isError(result)) {
         fprintf(stderr,
-                "ZL_DCtx_decompress failed: error code %ld, input size %d, output buffer size %d\n",
+                "ZL_DCtx_decompress failed: error code %ld, input size %ld, output buffer size %ld\n",
                 (long)ZL_RES_code(result),
-                srcLen,
-                dstLen);
+                (long)srcLen,
+                (long)dstLen);
         return -1;
     }
     return static_cast<jint>(ZL_RES_value(result));

@@ -45,7 +45,7 @@ jobs:
           - name: windows-x86_64
             runner: windows-2022
             classifier: windows_amd64
-            lib-name: libopenzl_jni.dll
+            lib-name: openzl_jni.dll
             run-tests: false
             allow-failure: false
 
@@ -106,7 +106,15 @@ jobs:
           dest="JNI/openzl-jni/src/main/resources/lib/${{ matrix.classifier }}"
           mkdir -p "$dest"
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "cmake_build/${{ matrix.lib-name }}" "$dest/"
+            if [ -f "cmake_build/${{ matrix.lib-name }}" ]; then
+              cp "cmake_build/${{ matrix.lib-name }}" "$dest/"
+            elif [ -f "cmake_build/cli/${{ matrix.lib-name }}" ]; then
+              cp "cmake_build/cli/${{ matrix.lib-name }}" "$dest/"
+            else
+              echo "Unable to locate built library for Windows target"
+              ls cmake_build
+              exit 1
+            fi
           else
             cp "cmake_build/cli/${{ matrix.lib-name }}" "$dest/"
           fi
