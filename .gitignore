@@ -1,4 +1,5 @@
 # build artifacts
+/build
 /doc/mkdocs/build/
 /doc/mkdocs/build-doxyxml/
 /obj/
