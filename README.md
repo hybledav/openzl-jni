@@ -16,7 +16,7 @@
    <dependency>
      <groupId>io.github.hybledav</groupId>
      <artifactId>openzl-jni</artifactId>
-     <version>0.1.3</version>
+     <version>0.1.4</version>
      <classifier>linux_amd64</classifier>
    </dependency>
    ```
