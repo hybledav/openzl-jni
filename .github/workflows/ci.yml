@@ -5,6 +5,16 @@ on:
     branches: [ main, dev ]
   pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.1.3)'
+        required: true
+      repository_id:
+        description: 'Maven server id from settings.xml (e.g. ossrh)'
+        required: true
+      staging_repository:
+        description: 'Repository URL for deployment'
+        required: true
 
 env:
   REVISION: 0.1-SNAPSHOT
@@ -113,22 +123,23 @@ jobs:
             cp "cmake_build/cli/${{ matrix.lib-name }}" "$dest/"
           fi
 
-      - name: Run JNI tests
+      - name: Package classifier (with tests)
         if: matrix.run-tests == true
         shell: bash
         run: |
           mvn -f JNI/pom.xml -pl openzl-jni -am \
             -Drevision=${REVISION} \
             -Dplatform.classifier=${{ matrix.classifier }} \
-            -Dgpg.skip=true test
+            -Dgpg.skip=true clean package
 
-      - name: Package classifier JAR
+      - name: Package classifier (skip tests)
+        if: matrix.run-tests != true
         shell: bash
         run: |
           mvn -f JNI/pom.xml -pl openzl-jni -am \
             -Drevision=${REVISION} \
             -Dplatform.classifier=${{ matrix.classifier }} \
-            -Dgpg.skip=true -DskipTests package
+            -Dgpg.skip=true -DskipTests clean package
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -137,4 +148,117 @@ jobs:
           retention-days: 7
           path: |
             JNI/openzl-jni/target/*${{ matrix.classifier }}*.jar
-            JNI/openzl-jni/target/*.pom
+            JNI/openzl-jni/target/openzl-jni-${REVISION}.jar
+            JNI/openzl-jni/src/main/resources/lib/${{ matrix.classifier }}/**
+
+  publish:
+    name: Publish Artifacts
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    environment:
+      name: release
+    steps:
+      - name: Check required parameters
+        run: |
+          if [ -z "${{ github.event.inputs.version }}" ]; then
+            echo "version input is required when manually publishing."
+            exit 1
+          fi
+          if [ -z "${{ github.event.inputs.repository_id }}" ]; then
+            echo "repository_id input is required when manually publishing."
+            exit 1
+          fi
+          if [ -z "${{ github.event.inputs.staging_repository }}" ]; then
+            echo "staging_repository input is required when manually publishing."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+
+      - name: Set up Temurin JDK for publishing
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          server-id: ${{ github.event.inputs.repository_id }}
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY || '' }}
+          gpg-passphrase: GPG_PASSPHRASE
+
+      - name: Download classifier artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: openzl-jni-*
+          path: release-artifacts
+          merge-multiple: false
+
+      - name: Set release version in POM
+        run: |
+          mvn -f JNI/pom.xml versions:set \
+            -DnewVersion=${{ github.event.inputs.version }} \
+            -DgenerateBackupPoms=false
+
+      - name: Prepare release packages
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          classifiers=(linux_amd64 macos_x86_64 macos_aarch64 windows_amd64)
+          rm -rf release-packages
+          mkdir -p release-packages/base
+          for classifier in "${classifiers[@]}"; do
+            rm -rf JNI/openzl-jni/src/main/resources/lib/*
+            mkdir -p JNI/openzl-jni/src/main/resources/lib/${classifier}
+            src_dir="release-artifacts/openzl-jni-${classifier}/JNI/openzl-jni/src/main/resources/lib/${classifier}"
+            if [ ! -d "${src_dir}" ]; then
+              echo "Expected resources for ${classifier} not found at ${src_dir}"
+              exit 1
+            fi
+            cp -R "${src_dir}/." "JNI/openzl-jni/src/main/resources/lib/${classifier}/"
+            mvn -f JNI/pom.xml -pl openzl-jni -am \
+              -Drevision=${RELEASE_VERSION} \
+              -Dplatform.classifier=${classifier} \
+              -Dgpg.skip=true \
+              -DskipTests clean package
+            mkdir -p release-packages/${classifier}
+            cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-${classifier}.jar release-packages/${classifier}/
+          done
+          cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}.jar release-packages/base/
+          cp JNI/openzl-jni/pom.xml release-packages/base/openzl-jni-${RELEASE_VERSION}.pom
+
+      - name: Deploy artifacts
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
+          REPOSITORY_ID: ${{ github.event.inputs.repository_id }}
+          REPOSITORY_URL: ${{ github.event.inputs.staging_repository }}
+        run: |
+          set -euo pipefail
+          mvn --batch-mode --non-recursive gpg:sign-and-deploy-file \
+            -Dfile=JNI/pom.xml \
+            -DpomFile=JNI/pom.xml \
+            -Dpackaging=pom \
+            -DrepositoryId=${REPOSITORY_ID} \
+            -Durl=${REPOSITORY_URL}
+          mvn --batch-mode --non-recursive gpg:sign-and-deploy-file \
+            -Dfile=release-packages/base/openzl-jni-${RELEASE_VERSION}.jar \
+            -DpomFile=release-packages/base/openzl-jni-${RELEASE_VERSION}.pom \
+            -DrepositoryId=${REPOSITORY_ID} \
+            -Durl=${REPOSITORY_URL}
+          for classifier in linux_amd64 macos_x86_64 macos_aarch64 windows_amd64; do
+            mvn --batch-mode --non-recursive gpg:sign-and-deploy-file \
+              -Dfile=release-packages/${classifier}/openzl-jni-${RELEASE_VERSION}-${classifier}.jar \
+              -DpomFile=release-packages/base/openzl-jni-${RELEASE_VERSION}.pom \
+              -Dclassifier=${classifier} \
+              -DrepositoryId=${REPOSITORY_ID} \
+              -Durl=${REPOSITORY_URL}
+          done
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: openzl-jni-release-${{ github.event.inputs.version }}
+          retention-days: 14
+          path: release-packages/**
