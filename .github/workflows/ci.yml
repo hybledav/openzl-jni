@@ -146,6 +146,10 @@ jobs:
     runs-on: ubuntu-22.04
     environment:
       name: release
+    env:
+      MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+      MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+      GPG_KEY_ID: ${{ secrets.GPG_KEY_ID || '' }}
     steps:
       - name: Check required parameters
         run: |
@@ -154,6 +158,33 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v4
+
+      - name: Configure Maven settings
+        run: |
+          mkdir -p "${HOME}/.m2"
+          cat <<EOF > "${HOME}/.m2/settings.xml"
+          <settings>
+            <servers>
+              <server>
+                <id>central</id>
+                <username>${MAVEN_USERNAME}</username>
+                <password>${MAVEN_PASSWORD}</password>
+              </server>
+            </servers>
+            <profiles>
+              <profile>
+                <id>ossrh-release</id>
+                <properties>
+                  <gpg.executable>gpg</gpg.executable>
+                  <gpg.keyname>${GPG_KEY_ID}</gpg.keyname>
+                </properties>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>ossrh-release</activeProfile>
+            </activeProfiles>
+          </settings>
+          EOF
 
       - name: Set up Temurin JDK for publishing
         uses: actions/setup-java@v4
@@ -164,7 +195,6 @@ jobs:
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY || '' }}
-          gpg-passphrase: GPG_PASSPHRASE
 
       - name: Download classifier artifacts
         uses: actions/download-artifact@v4
