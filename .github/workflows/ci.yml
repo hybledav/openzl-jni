@@ -30,7 +30,7 @@ jobs:
             allow-failure: false
           - name: macos-arm64
             runner: macos-14
-            classifier: macos_aarch64
+            classifier: macos_arm64
             lib-name: libopenzl_jni.dylib
             run-tests: false
             allow-failure: false
@@ -185,7 +185,7 @@ jobs:
           RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
-          classifiers=(linux_amd64 macos_x86_64 macos_aarch64 windows_amd64)
+          classifiers=(linux_amd64 macos_arm64 windows_amd64)
           rm -rf release-packages
           mkdir -p release-packages/base
           for classifier in "${classifiers[@]}"; do
@@ -227,7 +227,7 @@ jobs:
             -DpomFile=release-packages/base/openzl-jni-${RELEASE_VERSION}.pom \
             -DrepositoryId=${REPOSITORY_ID} \
             -Durl=${REPOSITORY_URL}
-          for classifier in linux_amd64 macos_x86_64 macos_aarch64 windows_amd64; do
+          for classifier in linux_amd64 macos_arm64 windows_amd64; do
             mvn --batch-mode --non-recursive gpg:sign-and-deploy-file \
               -Dfile=release-packages/${classifier}/openzl-jni-${RELEASE_VERSION}-${classifier}.jar \
               -DpomFile=release-packages/base/openzl-jni-${RELEASE_VERSION}.pom \

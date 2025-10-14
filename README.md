@@ -16,12 +16,12 @@
    <dependency>
      <groupId>io.github.hybledav</groupId>
      <artifactId>openzl-jni</artifactId>
-  <version>0.1.3</version>
+     <version>0.1.3</version>
      <classifier>linux_amd64</classifier>
    </dependency>
    ```
 
-   Classifier jars package the native library per platform (e.g. `linux_amd64`, `macos_x86_64`, `windows_amd64`). The main artifact ships the Java façade.
+   Classifier jars package the native library per platform (e.g. `linux_amd64`, `macos_arm64`, `windows_amd64`). The main artifact ships the Java façade.
 
 2. **Compress data**
 
