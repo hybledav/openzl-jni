@@ -19,4 +19,13 @@
         <module>openzl-jni</module>
     </modules>
 
+    <profiles>
+        <profile>
+            <id>release</id>
+            <properties>
+                <revision>${revision}</revision>
+            </properties>
+        </profile>
+    </profiles>
+
 </project>
