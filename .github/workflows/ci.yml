@@ -24,12 +24,6 @@ jobs:
             lib-name: libopenzl_jni.so
             run-tests: true
             allow-failure: false
-          - name: linux-aarch64
-            runner: ubuntu-22.04-arm64
-            classifier: linux_aarch64
-            lib-name: libopenzl_jni.so
-            run-tests: false
-            allow-failure: false
           - name: macos-x86_64
             runner: macos-13
             classifier: macos_x86_64
