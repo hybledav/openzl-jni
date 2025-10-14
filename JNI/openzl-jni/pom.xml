@@ -12,6 +12,7 @@
 
     <groupId>io.github.hybledav</groupId>
     <artifactId>openzl-jni</artifactId>
+    <version>0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>OpenZL JNI Bindings</name>
@@ -44,11 +45,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <native.os>linux</native.os>
-        <native.arch>x86_64</native.arch>
         <native.library.name>openzl_jni</native.library.name>
         <native.resource.directory>lib</native.resource.directory>
-        <platform.classifier>linux_amd64</platform.classifier>
         <gpg.skip>false</gpg.skip>
     </properties>
 
@@ -91,20 +89,76 @@
                     <archive>
                         <manifestEntries>
                             <Automatic-Module-Name>io.github.hybledav.openzl.jni</Automatic-Module-Name>
-                            <OpenZL-Native-Classifier>${platform.classifier}</OpenZL-Native-Classifier>
                             <OpenZL-Native-Library>${native.library.name}</OpenZL-Native-Library>
+                            <OpenZL-Native-Classifier>none</OpenZL-Native-Classifier>
                         </manifestEntries>
                     </archive>
+                    <excludes>
+                        <exclude>${native.resource.directory}/**</exclude>
+                    </excludes>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>attach-platform-jar</id>
+                        <id>attach-linux-jar</id>
                         <phase>package</phase>
                         <goals>
                             <goal>jar</goal>
                         </goals>
                         <configuration>
-                            <classifier>${platform.classifier}</classifier>
+                            <classifier>linux_amd64</classifier>
+                            <archive>
+                                <manifestEntries>
+                                    <Automatic-Module-Name>io.github.hybledav.openzl.jni</Automatic-Module-Name>
+                                    <OpenZL-Native-Library>${native.library.name}</OpenZL-Native-Library>
+                                    <OpenZL-Native-Classifier>linux_amd64</OpenZL-Native-Classifier>
+                                </manifestEntries>
+                            </archive>
+                            <excludes combine.self="override">
+                                <exclude>${native.resource.directory}/macos_arm64/**</exclude>
+                                <exclude>${native.resource.directory}/windows_amd64/**</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>attach-macos-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>macos_arm64</classifier>
+                            <archive>
+                                <manifestEntries>
+                                    <Automatic-Module-Name>io.github.hybledav.openzl.jni</Automatic-Module-Name>
+                                    <OpenZL-Native-Library>${native.library.name}</OpenZL-Native-Library>
+                                    <OpenZL-Native-Classifier>macos_arm64</OpenZL-Native-Classifier>
+                                </manifestEntries>
+                            </archive>
+                            <excludes combine.self="override">
+                                <exclude>${native.resource.directory}/linux_amd64/**</exclude>
+                                <exclude>${native.resource.directory}/windows_amd64/**</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>attach-windows-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>windows_amd64</classifier>
+                            <archive>
+                                <manifestEntries>
+                                    <Automatic-Module-Name>io.github.hybledav.openzl.jni</Automatic-Module-Name>
+                                    <OpenZL-Native-Library>${native.library.name}</OpenZL-Native-Library>
+                                    <OpenZL-Native-Classifier>windows_amd64</OpenZL-Native-Classifier>
+                                </manifestEntries>
+                            </archive>
+                            <excludes combine.self="override">
+                                <exclude>${native.resource.directory}/linux_amd64/**</exclude>
+                                <exclude>${native.resource.directory}/macos_arm64/**</exclude>
+                            </excludes>
                         </configuration>
                     </execution>
                 </executions>
@@ -167,6 +221,31 @@
                 <configuration>
                     <skip>true</skip>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>1.5.0</version>
+                <configuration>
+                    <flattenMode>oss</flattenMode>
+                    <updatePomFile>true</updatePomFile>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten-clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.sonatype.central</groupId>
