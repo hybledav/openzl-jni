@@ -28,12 +28,6 @@ jobs:
             lib-name: libopenzl_jni.so
             run-tests: true
             allow-failure: false
-          - name: macos-x86_64
-            runner: macos-13
-            classifier: macos_x86_64
-            lib-name: libopenzl_jni.dylib
-            run-tests: false
-            allow-failure: false
           - name: macos-arm64
             runner: macos-14
             classifier: macos_aarch64
