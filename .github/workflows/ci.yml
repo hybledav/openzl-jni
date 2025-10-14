@@ -209,69 +209,44 @@ jobs:
             -DnewVersion=${{ github.event.inputs.version }} \
             -DgenerateBackupPoms=false
 
-      - name: Prepare release packages
+      - name: Build and publish release
         shell: bash
         env:
           RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
           classifiers=(linux_amd64 macos_arm64 windows_amd64)
+          rm -rf JNI/openzl-jni/src/main/resources/lib
+          mkdir -p JNI/openzl-jni/src/main/resources/lib
           rm -rf release-packages
-          mkdir -p release-packages/base
           for classifier in "${classifiers[@]}"; do
-            rm -rf JNI/openzl-jni/src/main/resources/lib/*
-            mkdir -p JNI/openzl-jni/src/main/resources/lib/${classifier}
+            dest="JNI/openzl-jni/src/main/resources/lib/${classifier}"
+            mkdir -p "${dest}"
             src_dir=$(find "release-artifacts/openzl-jni-${classifier}" -maxdepth 10 -type d -path "*/src/main/resources/lib/${classifier}" | head -n 1 || true)
             if [ -z "${src_dir}" ] || [ ! -d "${src_dir}" ]; then
               echo "Expected resources for ${classifier} not found under release-artifacts/openzl-jni-${classifier}"
               find "release-artifacts/openzl-jni-${classifier}" -maxdepth 10 -type d || true
               exit 1
             fi
-            cp -R "${src_dir}/." "JNI/openzl-jni/src/main/resources/lib/${classifier}/"
-            mvn -f JNI/pom.xml -pl openzl-jni -am \
-              -Drevision=${RELEASE_VERSION} \
-              -Dplatform.classifier=${classifier} \
-              -Dgpg.skip=true \
-              -DskipTests clean package
+            cp -R "${src_dir}/." "${dest}/"
+          done
+          mvn --batch-mode -f JNI/openzl-jni/pom.xml \
+            -Drevision=${RELEASE_VERSION} \
+            -DskipTests \
+            -Dgpg.passphraseServerId= \
+            clean package central-publishing:publish
+          mkdir -p release-packages/base
+          cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}.jar release-packages/base/
+          cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}.jar.asc release-packages/base/ || true
+          cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-sources.jar release-packages/base/ || true
+          cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-sources.jar.asc release-packages/base/ || true
+          cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-javadoc.jar release-packages/base/ || true
+          cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-javadoc.jar.asc release-packages/base/ || true
+          cp JNI/openzl-jni/pom.xml release-packages/base/openzl-jni-${RELEASE_VERSION}.pom
+          for classifier in "${classifiers[@]}"; do
             mkdir -p release-packages/${classifier}
             cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-${classifier}.jar release-packages/${classifier}/
-          done
-          cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}.jar release-packages/base/
-          cp JNI/openzl-jni/pom.xml release-packages/base/openzl-jni-${RELEASE_VERSION}.pom
-
-      - name: Deploy artifacts
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ github.event.inputs.version }}
-          REPOSITORY_ID: central
-          REPOSITORY_URL: https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/
-        run: |
-          set -euo pipefail
-          passphrase_args=(-Dgpg.passphraseServerId=)
-          if [ -n "${MAVEN_GPG_PASSPHRASE:-}" ]; then
-            passphrase_args+=("-Dgpg.passphrase=${MAVEN_GPG_PASSPHRASE}")
-          fi
-          mvn --batch-mode --non-recursive gpg:sign-and-deploy-file \
-            -Dfile=JNI/pom.xml \
-            -DpomFile=JNI/pom.xml \
-            -Dpackaging=pom \
-            -DrepositoryId=${REPOSITORY_ID} \
-            -Durl=${REPOSITORY_URL} \
-            "${passphrase_args[@]}"
-          mvn --batch-mode --non-recursive gpg:sign-and-deploy-file \
-            -Dfile=release-packages/base/openzl-jni-${RELEASE_VERSION}.jar \
-            -DpomFile=release-packages/base/openzl-jni-${RELEASE_VERSION}.pom \
-            -DrepositoryId=${REPOSITORY_ID} \
-            -Durl=${REPOSITORY_URL} \
-            "${passphrase_args[@]}"
-          for classifier in linux_amd64 macos_arm64 windows_amd64; do
-            mvn --batch-mode --non-recursive gpg:sign-and-deploy-file \
-              -Dfile=release-packages/${classifier}/openzl-jni-${RELEASE_VERSION}-${classifier}.jar \
-              -DpomFile=release-packages/base/openzl-jni-${RELEASE_VERSION}.pom \
-              -Dclassifier=${classifier} \
-              -DrepositoryId=${REPOSITORY_ID} \
-              -Durl=${REPOSITORY_URL} \
-              "${passphrase_args[@]}"
+            cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-${classifier}.jar.asc release-packages/${classifier}/ || true
           done
 
       - name: Upload release bundle
