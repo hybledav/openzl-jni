@@ -191,9 +191,10 @@ jobs:
           for classifier in "${classifiers[@]}"; do
             rm -rf JNI/openzl-jni/src/main/resources/lib/*
             mkdir -p JNI/openzl-jni/src/main/resources/lib/${classifier}
-            src_dir="release-artifacts/openzl-jni-${classifier}/JNI/openzl-jni/src/main/resources/lib/${classifier}"
-            if [ ! -d "${src_dir}" ]; then
-              echo "Expected resources for ${classifier} not found at ${src_dir}"
+            src_dir=$(find "release-artifacts/openzl-jni-${classifier}" -maxdepth 10 -type d -path "*/src/main/resources/lib/${classifier}" | head -n 1 || true)
+            if [ -z "${src_dir}" ] || [ ! -d "${src_dir}" ]; then
+              echo "Expected resources for ${classifier} not found under release-artifacts/openzl-jni-${classifier}"
+              find "release-artifacts/openzl-jni-${classifier}" -maxdepth 10 -type d || true
               exit 1
             fi
             cp -R "${src_dir}/." "JNI/openzl-jni/src/main/resources/lib/${classifier}/"
