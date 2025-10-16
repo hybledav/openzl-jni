@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://hybledav.github.io/openzl-jni/sitemap.xml
