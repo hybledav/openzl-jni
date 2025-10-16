@@ -169,8 +169,6 @@ cp cmake_build/cli/libopenzl_jni.so JNI/openzl-jni/src/main/resources/lib/linux_
 mvn -f JNI/pom.xml -pl openzl-jni -am clean package
 ```
 
-Releases are currently produced with GCC 14.2.0 on Debian. If you publish your own build, rebuild the shared library with your toolchain first.
-
 ---
 
 ## Testing
