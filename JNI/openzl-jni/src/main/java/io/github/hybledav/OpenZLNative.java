@@ -24,15 +24,12 @@ final class OpenZLNative {
             if (LOADED.get()) {
                 return;
             }
-            String os = normaliseOs(System.getProperty("os.name"));
-            String arch = normaliseArch(System.getProperty("os.arch"));
-            String mapped = System.mapLibraryName(LIBRARY_BASE_NAME);
-            String classifierArch = toClassifierArch(arch);
-            String classifier = os + "_" + classifierArch;
-            String[] candidatePaths = {
-                    String.format(Locale.ROOT, "/lib/%s/%s", classifier, mapped),
-                    String.format(Locale.ROOT, RESOURCE_TEMPLATE, os, arch, mapped),
-                    String.format(Locale.ROOT, RESOURCE_TEMPLATE, os, classifierArch, mapped)};
+        String os = normaliseOs(System.getProperty("os.name"));
+        String arch = normaliseArch(System.getProperty("os.arch"));
+        String mapped = System.mapLibraryName(LIBRARY_BASE_NAME);
+        String classifierArch = toClassifierArch(arch);
+
+        String[] candidatePaths = buildCandidatePaths(os, arch, classifierArch, mapped);
 
             IOException extractionError = null;
             for (String resourcePath : candidatePaths) {
@@ -60,16 +57,42 @@ final class OpenZLNative {
                 return;
             } catch (UnsatisfiedLinkError ule) {
                 String message = String.format(Locale.ROOT,
-                        "Unsupported platform for OpenZL JNI: %s/%s (resources %s, %s, %s not found)%n%s",
+                        "Unsupported platform for OpenZL JNI: %s/%s (checked %s)%n%s",
                         os,
                         arch,
-                        candidatePaths[0],
-                        candidatePaths[1],
-                        candidatePaths[2],
+                        String.join(", ", candidatePaths),
                         ule.getMessage());
                 throw new UnsatisfiedLinkError(message);
             }
         }
+    }
+
+    private static String[] buildCandidatePaths(String initialOs, String arch, String classifierArch, String mapped) {
+        java.util.LinkedHashSet<String> osCandidates = new java.util.LinkedHashSet<>();
+        osCandidates.add(initialOs);
+        if ("macos".equals(initialOs)) {
+            osCandidates.add("osx");
+        } else if ("osx".equals(initialOs)) {
+            osCandidates.add("macos");
+        }
+
+        java.util.LinkedHashSet<String> archCandidates = new java.util.LinkedHashSet<>();
+        archCandidates.add(arch);
+        archCandidates.add(classifierArch);
+
+        java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
+        for (String osCandidate : osCandidates) {
+            for (String archCandidate : archCandidates) {
+                paths.add(String.format(Locale.ROOT, "/lib/%s_%s/%s", osCandidate, archCandidate, mapped));
+            }
+        }
+        for (String osCandidate : osCandidates) {
+            for (String archCandidate : archCandidates) {
+                paths.add(String.format(Locale.ROOT, RESOURCE_TEMPLATE, osCandidate, archCandidate, mapped));
+            }
+        }
+
+        return paths.toArray(new String[0]);
     }
 
     private static String normaliseOs(String name) {
@@ -77,8 +100,8 @@ final class OpenZLNative {
         if (lowered.contains("linux")) {
             return "linux";
         }
-        if (lowered.contains("mac") || lowered.contains("darwin") || lowered.contains("os x")) {
-            return "osx";
+        if (lowered.contains("mac") || lowered.contains("darwin") || lowered.contains("os x") || lowered.contains("osx")) {
+            return "macos";
         }
         if (lowered.contains("win")) {
             return "windows";
@@ -106,6 +129,9 @@ final class OpenZLNative {
     private static String toClassifierArch(String arch) {
         if ("x86_64".equals(arch)) {
             return "amd64";
+        }
+        if ("aarch64".equals(arch)) {
+            return "arm64";
         }
         return arch;
     }
