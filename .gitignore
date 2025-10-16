@@ -85,6 +85,7 @@ hs_err_pid*.log
 # Maven artifacts
 target/
 */target/
+.flattened-pom
 
 # Idea
 .idea/
