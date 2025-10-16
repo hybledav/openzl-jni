@@ -27,6 +27,7 @@ set(OPENZL_JNI_DIR ${PROJECT_SOURCE_DIR}/JNI)
 
 add_library(openzl_jni SHARED
     ${OPENZL_JNI_DIR}/OpenZLCompressor.cpp
+    ${OPENZL_JNI_DIR}/OpenZLNativeSupport.cpp
 )
 set_target_properties(openzl_jni PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/cli"
