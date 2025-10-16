@@ -1,0 +1,30 @@
+name: Update sitemap lastmod
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  update-sitemap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Update <lastmod> date in sitemap.xml
+        run: |
+          DATE=$(date -u +"%Y-%m-%d")
+          echo "Updating sitemap with date: $DATE"
+          sed -i "s|<lastmod>.*</lastmod>|<lastmod>$DATE</lastmod>|g" docs/sitemap.xml
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/sitemap.xml
+          git commit -m "chore: update sitemap lastmod to $DATE [skip ci]"
+          git push
+       
