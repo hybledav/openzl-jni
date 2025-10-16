@@ -74,6 +74,7 @@ public class OpenZLCompressor implements AutoCloseable {
     private native int decompressIntoNative(byte[] src, int srcOffset, int srcLength,
                                             byte[] dst, int dstOffset, int dstLength);
     private native void destroyCompressor();
+    private native void configureSddlNative(byte[] compiledDescription);
 
     public int compress(ByteBuffer src, ByteBuffer dst) {
         requireDirect(src, "src");
@@ -156,6 +157,15 @@ public class OpenZLCompressor implements AutoCloseable {
 
     public void reset() {
         resetNative();
+    }
+
+    public void configureSddl(byte[] compiledDescription) {
+        ensureOpen();
+        Objects.requireNonNull(compiledDescription, "compiledDescription");
+        if (compiledDescription.length == 0) {
+            throw new IllegalArgumentException("compiledDescription must not be empty");
+        }
+        configureSddlNative(compiledDescription);
     }
 
     public int compress(byte[] input, byte[] output) {
