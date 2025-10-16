@@ -6,6 +6,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(OPENZL_BUILD_TESTS OFF CACHE BOOL "Don't build OpenZL tests" FORCE)
 set(OPENZL_BUILD_BENCHMARKS OFF CACHE BOOL "Don't build OpenZL benchmarks" FORCE)
 set(OPENZL_BUILD_MODE opt CACHE STRING "OpenZL build mode" FORCE)
+set(OPENZL_BUILD_TOOLS ON CACHE BOOL "Build OpenZL tools for JNI" FORCE)
 
 include(FetchContent)
 
@@ -35,9 +36,17 @@ target_include_directories(openzl_jni PRIVATE
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}
+    ${openzl_SOURCE_DIR}
+    ${openzl_SOURCE_DIR}/include
+    ${openzl_SOURCE_DIR}/tools
+    ${openzl_BINARY_DIR}/include
+    ${openzl_BINARY_DIR}/tools
     ${OPENZL_JNI_DIR}
     ${JNI_INCLUDE_DIRS}
 )
 target_link_libraries(openzl_jni PRIVATE
     openzl_cpp
+    custom_parsers
+    sddl_profile
+    sddl_compiler_lib
 )

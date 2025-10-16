@@ -7,11 +7,15 @@
 #include "openzl/codecs/zl_generic.h"
 #include "openzl/codecs/zl_store.h"
 #include "openzl/codecs/zl_zstd.h"
+#include "openzl/codecs/zl_sddl.h"
 #include "openzl/zl_compress.h"
 #include "openzl/zl_compressor.h"
 #include "openzl/zl_data.h"
 #include "openzl/zl_decompress.h"
 #include "openzl/zl_opaque_types.h"
+#include "custom_parsers/sddl/sddl_profile.h"
+#include "tools/sddl/compiler/Compiler.h"
+#include "tools/sddl/compiler/Exception.h"
 #include <array>
 #include <limits>
 #include <memory>
@@ -254,6 +258,16 @@ static void setNativeHandle(JNIEnv* env, jobject obj, NativeState* value)
 static void throwNew(JNIEnv* env, jclass clazz, const char* message)
 {
     env->ThrowNew(clazz, message);
+}
+
+static void throwIllegalState(JNIEnv* env, const std::string& message)
+{
+    throwNew(env, gJNIRefs.illegalStateException, message.c_str());
+}
+
+static void throwIllegalArgument(JNIEnv* env, const std::string& message)
+{
+    throwNew(env, gJNIRefs.illegalArgumentException, message.c_str());
 }
 
 static bool ensureState(NativeState* state, const char* method)
@@ -1345,6 +1359,107 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getD
         return -1;
     }
     return static_cast<jlong>(ZL_RES_value(sizeReport));
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureSddlNative(JNIEnv* env,
+        jobject obj,
+        jbyteArray compiledDescription)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "configureSddl")) {
+        return;
+    }
+    if (compiledDescription == nullptr) {
+        throwNew(env, gJNIRefs.nullPointerException, "compiledDescription");
+        return;
+    }
+
+    jsize length = env->GetArrayLength(compiledDescription);
+    if (length <= 0) {
+        throwIllegalArgument(env, "Compiled SDDL description must not be empty");
+        return;
+    }
+
+    void* bytes = env->GetPrimitiveArrayCritical(compiledDescription, nullptr);
+    if (bytes == nullptr) {
+        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access compiled description");
+        return;
+    }
+
+    auto result = ZL_SDDL_setupProfile(
+            state->compressor.get(), bytes, static_cast<size_t>(length));
+
+    env->ReleasePrimitiveArrayCritical(compiledDescription, bytes, JNI_ABORT);
+
+    if (ZL_RES_isError(result)) {
+        auto context = state->compressor.getErrorContextString(result);
+        std::string message = "Failed to configure SDDL profile";
+        if (!context.empty()) {
+            message.append(": ").append(context.data(), context.size());
+        }
+        throwIllegalState(env, message);
+        return;
+    }
+
+    state->setGraph(ZL_RES_value(result));
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLSddl_compileNative(JNIEnv* env,
+        jclass,
+        jstring source,
+        jboolean includeDebugInfo,
+        jint verbosity)
+{
+    if (source == nullptr) {
+        throwNew(env, gJNIRefs.nullPointerException, "description");
+        return nullptr;
+    }
+
+    const char* sourceChars = env->GetStringUTFChars(source, nullptr);
+    if (sourceChars == nullptr) {
+        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to read source");
+        return nullptr;
+    }
+
+    std::string compiled;
+    try {
+        openzl::sddl::Compiler::Options options;
+        if (!includeDebugInfo) {
+            options.with_no_debug_info();
+        }
+        if (verbosity != 0) {
+            options.with_verbosity(static_cast<int>(verbosity));
+        }
+        openzl::sddl::Compiler compiler{ std::move(options) };
+        compiled = compiler.compile(sourceChars, "<jni>");
+    } catch (const openzl::sddl::CompilerException& ex) {
+        env->ReleaseStringUTFChars(source, sourceChars);
+        throwIllegalArgument(env, ex.what());
+        return nullptr;
+    } catch (const std::exception& ex) {
+        env->ReleaseStringUTFChars(source, sourceChars);
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+
+    env->ReleaseStringUTFChars(source, sourceChars);
+
+    if (compiled.empty()) {
+        throwIllegalState(env, "Compiler returned empty result");
+        return nullptr;
+    }
+
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(compiled.size()));
+    if (result == nullptr) {
+        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to allocate compiled output");
+        return nullptr;
+    }
+
+    env->SetByteArrayRegion(result,
+            0,
+            static_cast<jsize>(compiled.size()),
+            reinterpret_cast<const jbyte*>(compiled.data()));
+    return result;
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*)
