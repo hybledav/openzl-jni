@@ -1,4 +1,5 @@
 #include "OpenZLCompressor.h"
+#include "OpenZLNativeSupport.h"
 #include "openzl/cpp/CParam.hpp"
 #include "openzl/cpp/Compressor.hpp"
 #include "openzl/codecs/zl_bitpack.h"
@@ -26,362 +27,7 @@
 
 namespace {
 
-struct CachedJNIRefs {
-    jclass compressorClass = nullptr;
-    jfieldID nativeHandleField = nullptr;
-    jclass nullPointerException = nullptr;
-    jclass illegalArgumentException = nullptr;
-    jclass illegalStateException = nullptr;
-    jclass outOfMemoryError = nullptr;
-};
-
-static CachedJNIRefs gJNIRefs;
-
-static void throwNew(JNIEnv* env, jclass clazz, const char* message);
-
-struct NativeState {
-    openzl::Compressor compressor;
-    ZL_CCtx* cctx = nullptr;
-    ZL_DCtx* dctx = nullptr;
-    ZL_GraphID startingGraph = ZL_GRAPH_ZSTD;
-    struct ScratchBuffer {
-        std::unique_ptr<uint8_t[]> data;
-        size_t capacity = 0;
-        size_t size = 0;
-
-        uint8_t* ensure(size_t required)
-        {
-            if (capacity < required) {
-                data.reset(required == 0 ? nullptr : new uint8_t[required]);
-                capacity = required;
-            }
-            return data.get();
-        }
-
-        void reset()
-        {
-            size = 0;
-        }
-
-        void setSize(size_t newSize)
-        {
-            size = newSize;
-        }
-
-        uint8_t* ptr()
-        {
-            return data.get();
-        }
-
-        const uint8_t* ptr() const
-        {
-            return data.get();
-        }
-    };
-
-    ScratchBuffer outputScratch;
-
-    static void expectSuccess(ZL_Report report, const char* action)
-    {
-        if (ZL_isError(report)) {
-            throw std::runtime_error(std::string(action)
-                    + " failed: error code "
-                    + std::to_string(static_cast<long>(ZL_RES_code(report))));
-        }
-    }
-
-    void applyDefaultParameters()
-    {
-        expectSuccess(
-                ZL_CCtx_setParameter(cctx, ZL_CParam_stickyParameters, 1),
-                "ZL_CCtx_setParameter(stickyParameters)");
-        expectSuccess(
-                ZL_CCtx_setParameter(
-                        cctx, ZL_CParam_compressionLevel, ZL_COMPRESSIONLEVEL_DEFAULT),
-                "ZL_CCtx_setParameter(compressionLevel)");
-        expectSuccess(
-                ZL_CCtx_setParameter(
-                cctx, ZL_CParam_formatVersion, ZL_getDefaultEncodingVersion()),
-                "ZL_CCtx_setParameter(formatVersion)");
-        expectSuccess(
-                ZL_DCtx_setParameter(dctx, ZL_DParam_stickyParameters, 1),
-                "ZL_DCtx_setParameter(stickyParameters)");
-    }
-
-    void configureGraph()
-    {
-        expectSuccess(
-                ZL_Compressor_selectStartingGraphID(compressor.get(), startingGraph),
-                "ZL_Compressor_selectStartingGraphID");
-        expectSuccess(
-                ZL_CCtx_refCompressor(cctx, compressor.get()),
-                "ZL_CCtx_refCompressor");
-        expectSuccess(
-                ZL_CCtx_selectStartingGraphID(cctx, compressor.get(), startingGraph, nullptr),
-                "ZL_CCtx_selectStartingGraphID");
-    }
-
-    void setGraph(ZL_GraphID graph)
-    {
-        startingGraph = graph;
-        configureGraph();
-    }
-
-    NativeState(ZL_GraphID graph)
-            : startingGraph(graph)
-    {
-        cctx = ZL_CCtx_create();
-        dctx = ZL_DCtx_create();
-        if (!cctx || !dctx) {
-            throw std::bad_alloc();
-        }
-        applyDefaultParameters();
-        configureGraph();
-    }
-
-    ~NativeState()
-    {
-        if (cctx) {
-            ZL_CCtx_free(cctx);
-        }
-        if (dctx) {
-            ZL_DCtx_free(dctx);
-        }
-    }
-
-    void reset()
-    {
-        expectSuccess(ZL_CCtx_resetParameters(cctx), "ZL_CCtx_resetParameters");
-        expectSuccess(ZL_DCtx_resetParameters(dctx), "ZL_DCtx_resetParameters");
-        applyDefaultParameters();
-        configureGraph();
-        outputScratch.reset();
-    }
-};
-
-static jclass makeGlobalClassRef(JNIEnv* env, const char* name)
-{
-    jclass local = env->FindClass(name);
-    if (!local) {
-        return nullptr;
-    }
-    jclass global = static_cast<jclass>(env->NewGlobalRef(local));
-    env->DeleteLocalRef(local);
-    return global;
-}
-
-static bool initJniRefs(JNIEnv* env)
-{
-    gJNIRefs.compressorClass = makeGlobalClassRef(env, "io/github/hybledav/OpenZLCompressor");
-    if (!gJNIRefs.compressorClass) {
-        return false;
-    }
-    gJNIRefs.nativeHandleField = env->GetFieldID(gJNIRefs.compressorClass, "nativeHandle", "J");
-    if (!gJNIRefs.nativeHandleField) {
-        return false;
-    }
-    gJNIRefs.nullPointerException = makeGlobalClassRef(env, "java/lang/NullPointerException");
-    gJNIRefs.illegalArgumentException = makeGlobalClassRef(env, "java/lang/IllegalArgumentException");
-    gJNIRefs.illegalStateException = makeGlobalClassRef(env, "java/lang/IllegalStateException");
-    gJNIRefs.outOfMemoryError = makeGlobalClassRef(env, "java/lang/OutOfMemoryError");
-    if (!gJNIRefs.nullPointerException || !gJNIRefs.illegalArgumentException
-            || !gJNIRefs.illegalStateException || !gJNIRefs.outOfMemoryError) {
-        return false;
-    }
-    return true;
-}
-
-static void clearJniRefs(JNIEnv* env)
-{
-    if (gJNIRefs.compressorClass) {
-        env->DeleteGlobalRef(gJNIRefs.compressorClass);
-        gJNIRefs.compressorClass = nullptr;
-    }
-    if (gJNIRefs.nullPointerException) {
-        env->DeleteGlobalRef(gJNIRefs.nullPointerException);
-        gJNIRefs.nullPointerException = nullptr;
-    }
-    if (gJNIRefs.illegalArgumentException) {
-        env->DeleteGlobalRef(gJNIRefs.illegalArgumentException);
-        gJNIRefs.illegalArgumentException = nullptr;
-    }
-    if (gJNIRefs.illegalStateException) {
-        env->DeleteGlobalRef(gJNIRefs.illegalStateException);
-        gJNIRefs.illegalStateException = nullptr;
-    }
-    if (gJNIRefs.outOfMemoryError) {
-        env->DeleteGlobalRef(gJNIRefs.outOfMemoryError);
-        gJNIRefs.outOfMemoryError = nullptr;
-    }
-    gJNIRefs.nativeHandleField = nullptr;
-}
-
-static bool checkArrayRange(JNIEnv* env,
-        jbyteArray array,
-        jint offset,
-        jint length,
-        const char* name)
-{
-    if (array == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, name);
-        return false;
-    }
-    if (offset < 0 || length < 0) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "offset or length is negative");
-        return false;
-    }
-    jsize arrayLen = env->GetArrayLength(array);
-    if (offset > arrayLen || length > arrayLen - offset) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "offset/length out of bounds");
-        return false;
-    }
-    return true;
-}
-
-static constexpr int MAX_GLOBAL_CACHE = 8;
-static NativeState* globalCache[MAX_GLOBAL_CACHE];
-static int globalCacheSize = 0;
-
-thread_local NativeState* tlsCachedState = nullptr;
-
-static NativeState* getState(JNIEnv* env, jobject obj)
-{
-    return reinterpret_cast<NativeState*>(
-            env->GetLongField(obj, gJNIRefs.nativeHandleField));
-}
-
-static void setNativeHandle(JNIEnv* env, jobject obj, NativeState* value)
-{
-    env->SetLongField(obj, gJNIRefs.nativeHandleField, reinterpret_cast<jlong>(value));
-}
-
-static void throwNew(JNIEnv* env, jclass clazz, const char* message)
-{
-    env->ThrowNew(clazz, message);
-}
-
-static void throwIllegalState(JNIEnv* env, const std::string& message)
-{
-    throwNew(env, gJNIRefs.illegalStateException, message.c_str());
-}
-
-static void throwIllegalArgument(JNIEnv* env, const std::string& message)
-{
-    throwNew(env, gJNIRefs.illegalArgumentException, message.c_str());
-}
-
-static bool ensureState(NativeState* state, const char* method)
-{
-    if (state != nullptr) {
-        return true;
-    }
-    fprintf(stderr, "OpenZLCompressor.%s called after close()\n", method);
-    return false;
-}
-
-static bool ensureDirect(JNIEnv* env, jobject buffer, const char* name)
-{
-    if (buffer == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, name);
-        return false;
-    }
-    void* addr = env->GetDirectBufferAddress(buffer);
-    if (addr == nullptr) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "ByteBuffer must be direct");
-        return false;
-    }
-    return true;
-}
-
-static bool ensureDirectRange(JNIEnv* env,
-        jobject buffer,
-        jint position,
-        jint length,
-        const char* name)
-{
-    if (!ensureDirect(env, buffer, name)) {
-        return false;
-    }
-    if (position < 0 || length < 0) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "Negative position or length");
-        return false;
-    }
-    jlong capacity = env->GetDirectBufferCapacity(buffer);
-    if (capacity < 0) {
-        throwNew(env, gJNIRefs.illegalStateException, "Unable to query direct buffer capacity");
-        return false;
-    }
-    jlong end = static_cast<jlong>(position) + static_cast<jlong>(length);
-    if (end > capacity) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "position/length exceed buffer capacity");
-        return false;
-    }
-    return true;
-}
-
-static ZL_GraphID graphIdFromOrdinal(jint ordinal)
-{
-    switch (ordinal) {
-    case 1:
-        return ZL_GRAPH_COMPRESS_GENERIC;
-    case 2:
-        return ZL_GRAPH_NUMERIC;
-    case 3:
-        return ZL_GRAPH_STORE;
-    case 4:
-        return ZL_GRAPH_BITPACK;
-    case 5:
-        return ZL_GRAPH_FSE;
-    case 6:
-        return ZL_GRAPH_HUFFMAN;
-    case 7:
-        return ZL_GRAPH_ENTROPY;
-    case 8:
-        return ZL_GRAPH_CONSTANT;
-    case 0:
-    default:
-        return ZL_GRAPH_ZSTD;
-    }
-}
-
-static bool graphEquals(ZL_GraphID lhs, ZL_GraphID rhs)
-{
-    return lhs.gid == rhs.gid;
-}
-
-static jint graphOrdinalFromId(ZL_GraphID graph)
-{
-    if (graphEquals(graph, ZL_GRAPH_ZSTD)) {
-        return 0;
-    }
-    if (graphEquals(graph, ZL_GRAPH_COMPRESS_GENERIC)) {
-        return 1;
-    }
-    if (graphEquals(graph, ZL_GRAPH_NUMERIC)) {
-        return 2;
-    }
-    if (graphEquals(graph, ZL_GRAPH_STORE)) {
-        return 3;
-    }
-    if (graphEquals(graph, ZL_GRAPH_BITPACK)) {
-        return 4;
-    }
-    if (graphEquals(graph, ZL_GRAPH_FSE)) {
-        return 5;
-    }
-    if (graphEquals(graph, ZL_GRAPH_HUFFMAN)) {
-        return 6;
-    }
-    if (graphEquals(graph, ZL_GRAPH_ENTROPY)) {
-        return 7;
-    }
-    if (graphEquals(graph, ZL_GRAPH_CONSTANT)) {
-        return 8;
-    }
-    return -1;
-}
-
-static jbyteArray compressNumericCommon(
+jbyteArray compressNumericCommon(
         JNIEnv* env,
         NativeState* state,
         const void* data,
@@ -396,7 +42,7 @@ static jbyteArray compressNumericCommon(
     uint8_t* dstPtr = state->outputScratch.ensure(bound);
     ZL_TypedRef* typedRef = ZL_TypedRef_createNumeric(data, elementSize, elementCount);
     if (typedRef == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to allocate numeric typed reference");
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to allocate numeric typed reference");
         return nullptr;
     }
 
@@ -447,41 +93,41 @@ static jint inferGraphOrdinal(ZL_Type outputType, size_t compressedSize, size_t 
 static jlongArray describeFrameInternal(JNIEnv* env, const uint8_t* data, size_t length)
 {
     if (data == nullptr || length == 0) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "Compressed payload is empty");
+        throwNew(env, JniRefs().illegalArgumentException, "Compressed payload is empty");
         return nullptr;
     }
 
     ZL_FrameInfo* frameInfo = ZL_FrameInfo_create(data, length);
     if (frameInfo == nullptr) {
-        throwNew(env, gJNIRefs.illegalStateException, "Failed to create frame info");
+        throwNew(env, JniRefs().illegalStateException, "Failed to create frame info");
         return nullptr;
     }
 
     ZL_Report formatReport = ZL_FrameInfo_getFormatVersion(frameInfo);
     if (ZL_isError(formatReport)) {
         ZL_FrameInfo_free(frameInfo);
-        throwNew(env, gJNIRefs.illegalStateException, "Unable to read frame format version");
+        throwNew(env, JniRefs().illegalStateException, "Unable to read frame format version");
         return nullptr;
     }
 
     ZL_Report outputsReport = ZL_FrameInfo_getNumOutputs(frameInfo);
     if (ZL_isError(outputsReport)) {
         ZL_FrameInfo_free(frameInfo);
-        throwNew(env, gJNIRefs.illegalStateException, "Unable to read frame outputs");
+        throwNew(env, JniRefs().illegalStateException, "Unable to read frame outputs");
         return nullptr;
     }
 
     size_t numOutputs = ZL_RES_value(outputsReport);
     if (numOutputs == 0) {
         ZL_FrameInfo_free(frameInfo);
-        throwNew(env, gJNIRefs.illegalStateException, "Frame does not expose outputs");
+        throwNew(env, JniRefs().illegalStateException, "Frame does not expose outputs");
         return nullptr;
     }
 
     ZL_Report decompressedReport = ZL_FrameInfo_getDecompressedSize(frameInfo, 0);
     if (ZL_isError(decompressedReport)) {
         ZL_FrameInfo_free(frameInfo);
-        throwNew(env, gJNIRefs.illegalStateException, "Unable to determine decompressed size");
+        throwNew(env, JniRefs().illegalStateException, "Unable to determine decompressed size");
         return nullptr;
     }
     size_t decompressedSize = ZL_RES_value(decompressedReport);
@@ -489,7 +135,7 @@ static jlongArray describeFrameInternal(JNIEnv* env, const uint8_t* data, size_t
     ZL_Report typeReport = ZL_FrameInfo_getOutputType(frameInfo, 0);
     if (ZL_isError(typeReport)) {
         ZL_FrameInfo_free(frameInfo);
-        throwNew(env, gJNIRefs.illegalStateException, "Unable to determine output type");
+        throwNew(env, JniRefs().illegalStateException, "Unable to determine output type");
         return nullptr;
     }
     int outputType = static_cast<int>(ZL_RES_value(typeReport));
@@ -526,19 +172,7 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_nati
 {
     try {
         ZL_GraphID graph = graphIdFromOrdinal(graphOrdinal);
-        NativeState* state = nullptr;
-        if (tlsCachedState != nullptr) {
-            state = tlsCachedState;
-            tlsCachedState = nullptr;
-            state->reset();
-            state->setGraph(graph);
-        } else if (globalCacheSize > 0) {
-            state = globalCache[--globalCacheSize];
-            state->reset();
-            state->setGraph(graph);
-        } else {
-            state = new NativeState(graph);
-        }
+        NativeState* state = acquireState(graph);
         return reinterpret_cast<jlong>(state);
     } catch (const std::exception& e) {
         fprintf(stderr, "Failed to initialize NativeState: %s\n", e.what());
@@ -589,13 +223,13 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_maxC
         jint inputSize)
 {
     if (inputSize < 0) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "inputSize must be non-negative");
+        throwNew(env, JniRefs().illegalArgumentException, "inputSize must be non-negative");
         return -1;
     }
 
     size_t bound = ZL_compressBound(static_cast<size_t>(inputSize));
     if (bound > static_cast<size_t>(std::numeric_limits<jlong>::max())) {
-        throwNew(env, gJNIRefs.illegalStateException, "Compression bound exceeds jlong capacity");
+        throwNew(env, JniRefs().illegalStateException, "Compression bound exceeds jlong capacity");
         return -1;
     }
     return static_cast<jlong>(bound);
@@ -616,14 +250,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destr
     if (!ensureState(state, "destroy")) {
         return;
     }
-    state->reset();
-    if (tlsCachedState == nullptr) {
-        tlsCachedState = state;
-    } else if (globalCacheSize < MAX_GLOBAL_CACHE) {
-        globalCache[globalCacheSize++] = state;
-    } else {
-        delete state;
-    }
+    recycleState(state);
     setNativeHandle(env, obj, nullptr);
 }
 
@@ -649,13 +276,13 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compr
 
     void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to access source array");
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to access source array");
         return -1;
     }
     void* dstPtr = env->GetPrimitiveArrayCritical(dst, nullptr);
     if (dstPtr == nullptr) {
         env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
-        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to access destination array");
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to access destination array");
         return -1;
     }
 
@@ -693,14 +320,14 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     if (input == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "input is null");
+        throwNew(env, JniRefs().nullPointerException, "input is null");
         return nullptr;
     }
 
     jsize len = env->GetArrayLength(input);
     void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "GetPrimitiveArrayCritical returned null");
+        throwNew(env, JniRefs().outOfMemoryError, "GetPrimitiveArrayCritical returned null");
         return nullptr;
     }
 
@@ -743,14 +370,14 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     }
 
     if (input == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "input is null");
+        throwNew(env, JniRefs().nullPointerException, "input is null");
         return nullptr;
     }
 
     jsize len = env->GetArrayLength(input);
     void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "GetPrimitiveArrayCritical returned null");
+        throwNew(env, JniRefs().outOfMemoryError, "GetPrimitiveArrayCritical returned null");
         return nullptr;
     }
 
@@ -802,13 +429,13 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         return nullptr;
     }
     if (data == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "data");
+        throwNew(env, JniRefs().nullPointerException, "data");
         return nullptr;
     }
     jsize length = env->GetArrayLength(data);
     jint* elements = env->GetIntArrayElements(data, nullptr);
     if (elements == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access int array");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access int array");
         return nullptr;
     }
     jbyteArray result = compressNumericCommon(
@@ -828,13 +455,13 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         return nullptr;
     }
     if (data == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "data");
+        throwNew(env, JniRefs().nullPointerException, "data");
         return nullptr;
     }
     jsize length = env->GetArrayLength(data);
     jlong* elements = env->GetLongArrayElements(data, nullptr);
     if (elements == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access long array");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access long array");
         return nullptr;
     }
     jbyteArray result = compressNumericCommon(
@@ -854,13 +481,13 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         return nullptr;
     }
     if (data == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "data");
+        throwNew(env, JniRefs().nullPointerException, "data");
         return nullptr;
     }
     jsize length = env->GetArrayLength(data);
     jfloat* elements = env->GetFloatArrayElements(data, nullptr);
     if (elements == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access float array");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access float array");
         return nullptr;
     }
     jbyteArray result = compressNumericCommon(
@@ -880,13 +507,13 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         return nullptr;
     }
     if (data == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "data");
+        throwNew(env, JniRefs().nullPointerException, "data");
         return nullptr;
     }
     jsize length = env->GetArrayLength(data);
     jdouble* elements = env->GetDoubleArrayElements(data, nullptr);
     if (elements == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access double array");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access double array");
         return nullptr;
     }
     jbyteArray result = compressNumericCommon(
@@ -906,13 +533,13 @@ extern "C" JNIEXPORT jintArray JNICALL Java_io_github_hybledav_OpenZLCompressor_
         return nullptr;
     }
     if (src == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "compressed");
+        throwNew(env, JniRefs().nullPointerException, "compressed");
         return nullptr;
     }
     jsize len = env->GetArrayLength(src);
     void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access compressed payload");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access compressed payload");
         return nullptr;
     }
     ZL_Report sizeReport = ZL_getDecompressedSize(srcPtr, static_cast<size_t>(len));
@@ -938,12 +565,12 @@ extern "C" JNIEXPORT jintArray JNICALL Java_io_github_hybledav_OpenZLCompressor_
         return nullptr;
     }
     if (info.type != ZL_Type_numeric || info.fixedWidth != sizeof(jint)) {
-        throwNew(env, gJNIRefs.illegalStateException, "Compressed stream is not an int array");
+        throwNew(env, JniRefs().illegalStateException, "Compressed stream is not an int array");
         return nullptr;
     }
     size_t elementCount = info.numElts;
     if (elementCount > static_cast<size_t>(std::numeric_limits<jsize>::max())) {
-        throwNew(env, gJNIRefs.illegalStateException, "Decompressed array is too large");
+        throwNew(env, JniRefs().illegalStateException, "Decompressed array is too large");
         return nullptr;
     }
     jintArray result = env->NewIntArray(static_cast<jsize>(elementCount));
@@ -963,13 +590,13 @@ extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         return nullptr;
     }
     if (src == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "compressed");
+        throwNew(env, JniRefs().nullPointerException, "compressed");
         return nullptr;
     }
     jsize len = env->GetArrayLength(src);
     void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access compressed payload");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access compressed payload");
         return nullptr;
     }
     ZL_Report sizeReport = ZL_getDecompressedSize(srcPtr, static_cast<size_t>(len));
@@ -995,12 +622,12 @@ extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         return nullptr;
     }
     if (info.type != ZL_Type_numeric || info.fixedWidth != sizeof(jlong)) {
-        throwNew(env, gJNIRefs.illegalStateException, "Compressed stream is not a long array");
+        throwNew(env, JniRefs().illegalStateException, "Compressed stream is not a long array");
         return nullptr;
     }
     size_t elementCount = info.numElts;
     if (elementCount > static_cast<size_t>(std::numeric_limits<jsize>::max())) {
-        throwNew(env, gJNIRefs.illegalStateException, "Decompressed array is too large");
+        throwNew(env, JniRefs().illegalStateException, "Decompressed array is too large");
         return nullptr;
     }
     jlongArray result = env->NewLongArray(static_cast<jsize>(elementCount));
@@ -1020,13 +647,13 @@ extern "C" JNIEXPORT jfloatArray JNICALL Java_io_github_hybledav_OpenZLCompresso
         return nullptr;
     }
     if (src == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "compressed");
+        throwNew(env, JniRefs().nullPointerException, "compressed");
         return nullptr;
     }
     jsize len = env->GetArrayLength(src);
     void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access compressed payload");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access compressed payload");
         return nullptr;
     }
     ZL_Report sizeReport = ZL_getDecompressedSize(srcPtr, static_cast<size_t>(len));
@@ -1052,12 +679,12 @@ extern "C" JNIEXPORT jfloatArray JNICALL Java_io_github_hybledav_OpenZLCompresso
         return nullptr;
     }
     if (info.type != ZL_Type_numeric || info.fixedWidth != sizeof(jfloat)) {
-        throwNew(env, gJNIRefs.illegalStateException, "Compressed stream is not a float array");
+        throwNew(env, JniRefs().illegalStateException, "Compressed stream is not a float array");
         return nullptr;
     }
     size_t elementCount = info.numElts;
     if (elementCount > static_cast<size_t>(std::numeric_limits<jsize>::max())) {
-        throwNew(env, gJNIRefs.illegalStateException, "Decompressed array is too large");
+        throwNew(env, JniRefs().illegalStateException, "Decompressed array is too large");
         return nullptr;
     }
     jfloatArray result = env->NewFloatArray(static_cast<jsize>(elementCount));
@@ -1077,13 +704,13 @@ extern "C" JNIEXPORT jdoubleArray JNICALL Java_io_github_hybledav_OpenZLCompress
         return nullptr;
     }
     if (src == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "compressed");
+        throwNew(env, JniRefs().nullPointerException, "compressed");
         return nullptr;
     }
     jsize len = env->GetArrayLength(src);
     void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access compressed payload");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access compressed payload");
         return nullptr;
     }
     ZL_Report sizeReport = ZL_getDecompressedSize(srcPtr, static_cast<size_t>(len));
@@ -1109,12 +736,12 @@ extern "C" JNIEXPORT jdoubleArray JNICALL Java_io_github_hybledav_OpenZLCompress
         return nullptr;
     }
     if (info.type != ZL_Type_numeric || info.fixedWidth != sizeof(jdouble)) {
-        throwNew(env, gJNIRefs.illegalStateException, "Compressed stream is not a double array");
+        throwNew(env, JniRefs().illegalStateException, "Compressed stream is not a double array");
         return nullptr;
     }
     size_t elementCount = info.numElts;
     if (elementCount > static_cast<size_t>(std::numeric_limits<jsize>::max())) {
-        throwNew(env, gJNIRefs.illegalStateException, "Decompressed array is too large");
+        throwNew(env, JniRefs().illegalStateException, "Decompressed array is too large");
         return nullptr;
     }
     jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(elementCount));
@@ -1130,13 +757,13 @@ extern "C" JNIEXPORT jdoubleArray JNICALL Java_io_github_hybledav_OpenZLCompress
 extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor_describeFrameNative(JNIEnv* env, jobject, jbyteArray src)
 {
     if (src == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "compressed");
+        throwNew(env, JniRefs().nullPointerException, "compressed");
         return nullptr;
     }
     jsize len = env->GetArrayLength(src);
     void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access compressed payload");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access compressed payload");
         return nullptr;
     }
     jlongArray result = describeFrameInternal(env,
@@ -1179,13 +806,13 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
 
     void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
     if (srcPtr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to access source array");
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to access source array");
         return -1;
     }
     void* dstPtr = env->GetPrimitiveArrayCritical(dst, nullptr);
     if (dstPtr == nullptr) {
         env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
-        throwNew(env, gJNIRefs.outOfMemoryError, "Failed to access destination array");
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to access destination array");
         return -1;
     }
 
@@ -1317,14 +944,14 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getD
     }
 
     if (input == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "input is null");
+        throwNew(env, JniRefs().nullPointerException, "input is null");
         return -1;
     }
 
     jsize len = env->GetArrayLength(input);
     void* ptr = env->GetPrimitiveArrayCritical(input, nullptr);
     if (ptr == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "GetPrimitiveArrayCritical returned null");
+        throwNew(env, JniRefs().outOfMemoryError, "GetPrimitiveArrayCritical returned null");
         return -1;
     }
 
@@ -1370,7 +997,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_confi
         return;
     }
     if (compiledDescription == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "compiledDescription");
+        throwNew(env, JniRefs().nullPointerException, "compiledDescription");
         return;
     }
 
@@ -1382,7 +1009,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_confi
 
     void* bytes = env->GetPrimitiveArrayCritical(compiledDescription, nullptr);
     if (bytes == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to access compiled description");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access compiled description");
         return;
     }
 
@@ -1411,13 +1038,13 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLSddl_compi
         jint verbosity)
 {
     if (source == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "description");
+        throwNew(env, JniRefs().nullPointerException, "description");
         return nullptr;
     }
 
     const char* sourceChars = env->GetStringUTFChars(source, nullptr);
     if (sourceChars == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to read source");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to read source");
         return nullptr;
     }
 
@@ -1451,7 +1078,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLSddl_compi
 
     jbyteArray result = env->NewByteArray(static_cast<jsize>(compiled.size()));
     if (result == nullptr) {
-        throwNew(env, gJNIRefs.outOfMemoryError, "Unable to allocate compiled output");
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to allocate compiled output");
         return nullptr;
     }
 
