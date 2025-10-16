@@ -4,6 +4,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 final class TestBufferManager {
@@ -111,6 +117,74 @@ final class TestBufferManager {
 
             buffers.release(compressed);
             buffers.release(restored);
+        }
+    }
+
+    @Test
+    void alignmentAndMinimumCapacityAreRespected() {
+        try (OpenZLBufferManager manager = OpenZLBufferManager.builder()
+                .minimumCapacity(512)
+                .alignment(128)
+                .build()) {
+            ByteBuffer buffer = manager.acquire(513);
+            assertTrue(buffer.capacity() >= 513);
+            assertEquals(0, buffer.capacity() % 128, "capacity should be aligned");
+            manager.release(buffer);
+        }
+    }
+
+    @Test
+    void buffersGrowWhenDemandDoubles() {
+        try (OpenZLBufferManager manager = OpenZLBufferManager.builder()
+                .minimumCapacity(256)
+                .alignment(64)
+                .build()) {
+            ByteBuffer initial = manager.acquire(512);
+            ByteBuffer larger = manager.acquire(initial.capacity() * 4);
+            assertNotSame(initial, larger, "manager should allocate a distinct buffer for larger demand");
+            assertTrue(larger.capacity() >= initial.capacity() * 4);
+            manager.release(initial);
+            manager.release(larger);
+        }
+    }
+
+    @Test
+    void buffersRemainThreadLocal() throws InterruptedException, ExecutionException {
+        try (OpenZLBufferManager manager = OpenZLBufferManager.builder()
+                .minimumCapacity(128)
+                .alignment(64)
+                .build()) {
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            try {
+                Callable<Integer> acquireTask = () -> {
+                    ByteBuffer buffer = manager.acquire(256);
+                    try {
+                        return System.identityHashCode(buffer);
+                    } finally {
+                        manager.release(buffer);
+                    }
+                };
+
+                Future<Integer> first = executor.submit(acquireTask);
+                Future<Integer> second = executor.submit(acquireTask);
+
+                assertNotEquals(first.get().intValue(), second.get().intValue(),
+                        "Each thread should receive its own pooled buffer instance");
+            } finally {
+                executor.shutdown();
+                assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS), "executor did not terminate promptly");
+            }
+        }
+    }
+
+    @Test
+    void releasingForeignBufferIsNoOp() {
+        try (OpenZLBufferManager manager = OpenZLBufferManager.builder().build()) {
+            ByteBuffer foreign = ByteBuffer.allocateDirect(32);
+            assertDoesNotThrow(() -> manager.release(foreign));
+
+            ByteBuffer buffer = manager.acquire(64);
+            manager.release(buffer);
         }
     }
 }
