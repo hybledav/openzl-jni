@@ -13,18 +13,23 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update <lastmod> date in sitemap.xml
         run: |
           DATE=$(date -u +"%Y-%m-%d")
-          echo "Updating sitemap with date: $DATE"
+          echo "Updating sitemap.xml lastmod to $DATE"
           sed -i "s|<lastmod>.*</lastmod>|<lastmod>$DATE</lastmod>|g" docs/sitemap.xml
 
-      - name: Commit and push changes
+      - name: Commit and push if changed
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/sitemap.xml
-          git commit -m "chore: update sitemap lastmod to $DATE [skip ci]"
-          git push
-       
+          if [[ -n $(git status --porcelain docs/sitemap.xml) ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/sitemap.xml
+            git commit -m "chore: update sitemap lastmod to $DATE [skip ci]"
+            git push
+          else
+            echo "No sitemap changes — skipping commit."
+          fi
