@@ -115,7 +115,7 @@ jobs:
         if: matrix.run-tests == true
         shell: bash
         run: |
-          mvn -f JNI/pom.xml -pl openzl-jni -am \
+          mvn -ntp -f JNI/pom.xml -pl openzl-jni -am \
             -Drevision=${REVISION} \
             -Dplatform.classifier=${{ matrix.classifier }} \
             -Dgpg.skip=true clean package
@@ -124,7 +124,7 @@ jobs:
         if: matrix.run-tests != true
         shell: bash
         run: |
-          mvn -f JNI/pom.xml -pl openzl-jni -am \
+          mvn -ntp -f JNI/pom.xml -pl openzl-jni -am \
             -Drevision=${REVISION} \
             -Dplatform.classifier=${{ matrix.classifier }} \
             -Dgpg.skip=true -DskipTests clean package
@@ -203,7 +203,7 @@ jobs:
 
       - name: Set release version in POM
         run: |
-          mvn -f JNI/pom.xml versions:set \
+          mvn -ntp -f JNI/pom.xml versions:set \
             -DnewVersion=${{ github.event.inputs.version }} \
             -DgenerateBackupPoms=false
 
@@ -228,7 +228,7 @@ jobs:
             fi
             cp -R "${src_dir}/." "${dest}/"
           done
-          mvn --batch-mode -f JNI/openzl-jni/pom.xml \
+          mvn --batch-mode -ntp -f JNI/openzl-jni/pom.xml \
             -Drevision=${RELEASE_VERSION} \
             -DskipTests \
             -Dgpg.passphraseServerId= \
