@@ -279,6 +279,32 @@ static bool ensureDirect(JNIEnv* env, jobject buffer, const char* name)
     return true;
 }
 
+static bool ensureDirectRange(JNIEnv* env,
+        jobject buffer,
+        jint position,
+        jint length,
+        const char* name)
+{
+    if (!ensureDirect(env, buffer, name)) {
+        return false;
+    }
+    if (position < 0 || length < 0) {
+        throwNew(env, gJNIRefs.illegalArgumentException, "Negative position or length");
+        return false;
+    }
+    jlong capacity = env->GetDirectBufferCapacity(buffer);
+    if (capacity < 0) {
+        throwNew(env, gJNIRefs.illegalStateException, "Unable to query direct buffer capacity");
+        return false;
+    }
+    jlong end = static_cast<jlong>(position) + static_cast<jlong>(length);
+    if (end > capacity) {
+        throwNew(env, gJNIRefs.illegalArgumentException, "position/length exceed buffer capacity");
+        return false;
+    }
+    return true;
+}
+
 static ZL_GraphID graphIdFromOrdinal(jint ordinal)
 {
     switch (ordinal) {
@@ -1108,19 +1134,10 @@ extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor
 
 extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor_describeFrameDirectNative(JNIEnv* env, jobject, jobject buffer, jint position, jint length)
 {
-    if (buffer == nullptr) {
-        throwNew(env, gJNIRefs.nullPointerException, "compressed");
-        return nullptr;
-    }
-    if (position < 0 || length < 0) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "Negative position or length");
+    if (!ensureDirectRange(env, buffer, position, length, "compressed")) {
         return nullptr;
     }
     auto* base = static_cast<const uint8_t*>(env->GetDirectBufferAddress(buffer));
-    if (base == nullptr) {
-        throwNew(env, gJNIRefs.illegalArgumentException, "ByteBuffer must be direct");
-        return nullptr;
-    }
     return describeFrameInternal(env,
             base + position,
             static_cast<size_t>(length));
@@ -1197,10 +1214,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compr
         return -1;
     }
 
-    if (!ensureDirect(env, src, "src")) {
+    if (!ensureDirectRange(env, src, srcPos, srcLen, "src")) {
         return -1;
     }
-    if (!ensureDirect(env, dst, "dst")) {
+    if (!ensureDirectRange(env, dst, dstPos, dstLen, "dst")) {
         return -1;
     }
 
@@ -1244,10 +1261,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
         return -1;
     }
 
-    if (!ensureDirect(env, src, "src")) {
+    if (!ensureDirectRange(env, src, srcPos, srcLen, "src")) {
         return -1;
     }
-    if (!ensureDirect(env, dst, "dst")) {
+    if (!ensureDirectRange(env, dst, dstPos, dstLen, "dst")) {
         return -1;
     }
 
@@ -1316,14 +1333,11 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getD
         return -1;
     }
 
-    if (!ensureDirect(env, src, "src")) {
+    if (!ensureDirectRange(env, src, srcPos, srcLen, "src")) {
         return -1;
     }
 
     auto* srcPtr = static_cast<uint8_t*>(env->GetDirectBufferAddress(src));
-    if (!srcPtr) {
-        return -1;
-    }
 
     srcPtr += srcPos;
     ZL_Report sizeReport = ZL_getDecompressedSize(srcPtr, static_cast<size_t>(srcLen));
