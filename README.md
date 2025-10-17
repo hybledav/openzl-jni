@@ -173,23 +173,6 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
 }
 ```
 
-| Enum constant | CLI profile | Notes |
-| --- | --- | --- |
-| `SERIAL` | `serial` | Default raw-byte framing used by the constructor. |
-| `PYTORCH` | `pytorch` | Mirrors the upstream PyTorch-friendly pipeline. |
-| `CSV` | `csv` | Structured comma-separated rows with column-aware clustering. |
-| `LITTLE_ENDIAN_SIGNED_16` | `le-i16` | 16-bit signed little-endian numeric arrays. |
-| `LITTLE_ENDIAN_UNSIGNED_16` | `le-u16` | 16-bit unsigned little-endian numeric arrays. |
-| `LITTLE_ENDIAN_SIGNED_32` | `le-i32` | 32-bit signed little-endian numeric arrays. |
-| `LITTLE_ENDIAN_UNSIGNED_32` | `le-u32` | 32-bit unsigned little-endian numeric arrays. |
-| `LITTLE_ENDIAN_SIGNED_64` | `le-i64` | 64-bit signed little-endian numeric arrays. |
-| `LITTLE_ENDIAN_UNSIGNED_64` | `le-u64` | 64-bit unsigned little-endian numeric arrays. |
-| `PARQUET` | `parquet` | Columnar layout tuned for Parquet-style data. |
-| `SDDL` | `sddl` | Placeholder entry; prefer `configureSddl(byte[])` for compiled programs. |
-| `SAO` | `sao` | Specialized analytics optimizer profile. |
-
-Profiles requiring additional arguments (for example, SDDL) accept a `Map<String, String>` via the overload `configureProfile(OpenZLProfile, Map<String, String>)`.
-
 ### Compression levels
 
 `OpenZLCompressionLevel` enumerates the native `compressionLevel` parameter (values 1–22). Higher levels favour density at the cost of CPU; lower levels bias speed. A compressor starts at the engine’s default level, which you can read back using `getCompressionLevel()`.
@@ -217,11 +200,9 @@ All level changes are sticky until you call `reset()` or explicitly select a new
 
 ---
 
-## Usage Scenarios
+## Planned features
 
-- **Analytics pipelines** – compress structured telemetry and numeric streams without dropping to native code.
-- **Data science workloads** – feed large numeric arrays into the NUMERIC graph for superior ratios.
-- **Storage systems** – inspect frames ahead of time to choose storage tiers or validate payloads before commit.
+See [TODO.md](TODO.md) for planned features and improvements.
 
 ---
 
@@ -237,12 +218,6 @@ mkdir -p JNI/openzl-jni/src/main/resources/lib/linux_amd64
 cp cmake_build/cli/libopenzl_jni.so JNI/openzl-jni/src/main/resources/lib/linux_amd64/
 mvn -f JNI/pom.xml -pl openzl-jni -am clean package
 ```
-
----
-
-## Testing
-
-`JNI/openzl-jni/src/test/java/io/github/hybledav/TestCompress500MB.java` performs a 500 MB pseudo-random round-trip as part of `mvn test`. Additional tests cover numeric compression helpers and metadata inspection.
 
 ---
 
