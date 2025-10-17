@@ -37,4 +37,22 @@ class TestOpenZLNativeMapping {
     void x64AliasProducesAmd64Classifier() {
         assertEquals("amd64", invokeToClassifierArch("x64"), "x64 should reuse amd64 classifier to match packaged resources");
     }
+
+    private static String[] invokeBuildCandidatePaths(String os, String arch, String classifierArch, String mapped) {
+        try {
+            Method method = OpenZLNative.class.getDeclaredMethod(
+                    "buildCandidatePaths", String.class, String.class, String.class, String.class);
+            method.setAccessible(true);
+            return (String[]) method.invoke(null, os, arch, classifierArch, mapped);
+        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            throw new AssertionError("Failed to invoke buildCandidatePaths", e);
+        }
+    }
+
+    @Test
+    void macOsProfilesIncludeOsxAlias() {
+        String[] paths = invokeBuildCandidatePaths("macos", "x86_64", "amd64", "libopenzl_jni.dylib");
+        assertTrue(java.util.Arrays.asList(paths).contains("/lib/macos_x86_64/libopenzl_jni.dylib"));
+        assertTrue(java.util.Arrays.asList(paths).contains("/lib/osx_x86_64/libopenzl_jni.dylib"));
+    }
 }

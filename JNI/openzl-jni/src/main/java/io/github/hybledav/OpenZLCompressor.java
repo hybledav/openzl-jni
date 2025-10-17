@@ -3,6 +3,7 @@ package io.github.hybledav;
 import java.lang.ref.Cleaner;
 import java.nio.ByteBuffer;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 public class OpenZLCompressor implements AutoCloseable {
@@ -75,6 +76,7 @@ public class OpenZLCompressor implements AutoCloseable {
                                             byte[] dst, int dstOffset, int dstLength);
     private native void destroyCompressor();
     private native void configureSddlNative(byte[] compiledDescription);
+    private native void configureProfileNative(String profileName, String[] keys, String[] values);
 
     public int compress(ByteBuffer src, ByteBuffer dst) {
         requireDirect(src, "src");
@@ -166,6 +168,29 @@ public class OpenZLCompressor implements AutoCloseable {
             throw new IllegalArgumentException("compiledDescription must not be empty");
         }
         configureSddlNative(compiledDescription);
+    }
+
+    public void configureProfile(OpenZLProfile profile) {
+        configureProfile(profile, Map.of());
+    }
+
+    public void configureProfile(OpenZLProfile profile, Map<String, String> arguments) {
+        ensureOpen();
+        Objects.requireNonNull(profile, "profile");
+
+        Map<String, String> args = arguments == null ? Map.of() : arguments;
+        String[] keys = new String[args.size()];
+        String[] values = new String[args.size()];
+        int index = 0;
+        for (Map.Entry<String, String> entry : args.entrySet()) {
+            String key = Objects.requireNonNull(entry.getKey(), "arguments key");
+            String value = Objects.requireNonNull(entry.getValue(),
+                    () -> "arguments value for key " + key);
+            keys[index] = key;
+            values[index] = value;
+            index++;
+        }
+        configureProfileNative(profile.profileName(), keys, values);
     }
 
     public int compress(byte[] input, byte[] output) {

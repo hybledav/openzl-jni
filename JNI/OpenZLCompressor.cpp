@@ -3,6 +3,8 @@
 #include "openzl/cpp/CParam.hpp"
 #include "openzl/cpp/Compressor.hpp"
 #include "openzl/zl_compress.h"
+#include "cli/utils/compress_profiles.h"
+#include "cli/utils/util.h"
 #include "custom_parsers/sddl/sddl_profile.h"
 #include "tools/sddl/compiler/Compiler.h"
 #include "tools/sddl/compiler/Exception.h"
@@ -97,6 +99,99 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destr
     }
     recycleState(state);
     setNativeHandle(env, obj, nullptr);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureProfileNative(JNIEnv* env,
+        jobject obj,
+        jstring profileName,
+        jobjectArray argKeys,
+        jobjectArray argValues)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "configureProfile")) {
+        return;
+    }
+    if (profileName == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "profileName");
+        return;
+    }
+
+    const char* profileChars = env->GetStringUTFChars(profileName, nullptr);
+    if (profileChars == nullptr) {
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to access profileName");
+        return;
+    }
+
+    std::string profile(profileChars);
+    env->ReleaseStringUTFChars(profileName, profileChars);
+
+    const auto& profiles = openzl::cli::compressProfiles();
+    auto it = profiles.find(profile);
+    if (it == profiles.end()) {
+        std::string message = "Unknown compression profile: " + profile;
+        throwIllegalArgument(env, message);
+        return;
+    }
+
+    jsize keyCount = argKeys != nullptr ? env->GetArrayLength(argKeys) : 0;
+    jsize valueCount = argValues != nullptr ? env->GetArrayLength(argValues) : 0;
+    if (keyCount != valueCount) {
+        throwIllegalArgument(env, "Argument keys and values must have the same length");
+        return;
+    }
+
+    openzl::cli::ProfileArgs args;
+    args.name = profile;
+    for (jsize i = 0; i < keyCount; ++i) {
+        auto keyObj = static_cast<jstring>(env->GetObjectArrayElement(argKeys, i));
+        auto valueObj = static_cast<jstring>(env->GetObjectArrayElement(argValues, i));
+        if (keyObj == nullptr || valueObj == nullptr) {
+            if (keyObj != nullptr) {
+                env->DeleteLocalRef(keyObj);
+            }
+            if (valueObj != nullptr) {
+                env->DeleteLocalRef(valueObj);
+            }
+            throwNew(env, JniRefs().nullPointerException, "arguments");
+            return;
+        }
+
+        const char* keyChars = env->GetStringUTFChars(keyObj, nullptr);
+        const char* valueChars = env->GetStringUTFChars(valueObj, nullptr);
+        if (keyChars == nullptr || valueChars == nullptr) {
+            if (keyChars != nullptr) {
+                env->ReleaseStringUTFChars(keyObj, keyChars);
+            }
+            if (valueChars != nullptr) {
+                env->ReleaseStringUTFChars(valueObj, valueChars);
+            }
+            env->DeleteLocalRef(keyObj);
+            env->DeleteLocalRef(valueObj);
+            throwNew(env, JniRefs().outOfMemoryError, "Unable to access profile arguments");
+            return;
+        }
+
+        args.argmap.emplace(std::string(keyChars), std::string(valueChars));
+        env->ReleaseStringUTFChars(keyObj, keyChars);
+        env->ReleaseStringUTFChars(valueObj, valueChars);
+        env->DeleteLocalRef(keyObj);
+        env->DeleteLocalRef(valueObj);
+    }
+
+    try {
+        auto* profilePtr = it->second.get();
+        ZL_GraphID graph = profilePtr->gen(
+                state->compressor.get(),
+                profilePtr->opaque ? profilePtr->opaque.get() : nullptr,
+                args);
+        state->setGraph(graph);
+    } catch (const openzl::cli::InvalidArgsException& ex) {
+        throwIllegalArgument(env, ex.what());
+        return;
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return;
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureSddlNative(JNIEnv* env,

@@ -94,7 +94,6 @@ final class OpenZLNative {
 
         return paths.toArray(new String[0]);
     }
-
     private static String normaliseOs(String name) {
         String lowered = Objects.toString(name, "unknown").toLowerCase(Locale.ROOT);
         if (lowered.contains("linux")) {
