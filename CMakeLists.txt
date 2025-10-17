@@ -24,6 +24,28 @@ FetchContent_MakeAvailable(openzl)
 
 find_package(JNI REQUIRED)
 
+if(TARGET custom_parsers AND TARGET pytorch_model_parser)
+    target_link_libraries(custom_parsers pytorch_model_parser)
+endif()
+
+set(OPENZL_LOGGER_STRING_SHIM "${PROJECT_SOURCE_DIR}/cmake/shims/logger_string_compat.h")
+if(TARGET logger AND EXISTS "${OPENZL_LOGGER_STRING_SHIM}")
+    if(MSVC)
+        target_compile_options(logger PRIVATE "/FI${OPENZL_LOGGER_STRING_SHIM}")
+    else()
+        target_compile_options(logger PRIVATE "-include${OPENZL_LOGGER_STRING_SHIM}")
+    endif()
+endif()
+
+set(OPENZL_TOOLS_IO_SHIM "${PROJECT_SOURCE_DIR}/cmake/shims/tools_io_stdexcept_compat.h")
+if(TARGET tools_io AND EXISTS "${OPENZL_TOOLS_IO_SHIM}")
+    if(MSVC)
+        target_compile_options(tools_io PRIVATE "/FI${OPENZL_TOOLS_IO_SHIM}")
+    else()
+        target_compile_options(tools_io PRIVATE "-include${OPENZL_TOOLS_IO_SHIM}")
+    endif()
+endif()
+
 set(OPENZL_JNI_DIR ${PROJECT_SOURCE_DIR}/JNI)
 
 add_library(openzl_jni SHARED
