@@ -19,6 +19,7 @@ public class OpenZLCompressor implements AutoCloseable {
     private static final int META_ELEMENT_COUNT = 4;
     private static final int META_FORMAT_VERSION = 5;
     private static final int META_LENGTH = 6;
+    private static final int CPARAM_COMPRESSION_LEVEL = 2;
 
     public OpenZLCompressor() {
         this(OpenZLGraph.ZSTD);
@@ -191,6 +192,18 @@ public class OpenZLCompressor implements AutoCloseable {
             index++;
         }
         configureProfileNative(profile.profileName(), keys, values);
+    }
+
+    public void setCompressionLevel(OpenZLCompressionLevel level) {
+        ensureOpen();
+        Objects.requireNonNull(level, "level");
+        setParameter(CPARAM_COMPRESSION_LEVEL, level.level());
+    }
+
+    public OpenZLCompressionLevel getCompressionLevel() {
+        ensureOpen();
+        int value = getParameter(CPARAM_COMPRESSION_LEVEL);
+        return OpenZLCompressionLevel.fromLevel(value);
     }
 
     public int compress(byte[] input, byte[] output) {
