@@ -111,7 +111,7 @@ final class OpenZLNative {
 
     private static String normaliseArch(String arch) {
         String lowered = Objects.toString(arch, "unknown").toLowerCase(Locale.ROOT);
-        if (lowered.matches("^(x86_64|amd64)$")) {
+        if (lowered.matches("^(x86_64|amd64|x64)$")) {
             return "x86_64";
         }
         if (lowered.matches("^(x86|i386|i486|i586|i686)$")) {
@@ -127,12 +127,13 @@ final class OpenZLNative {
     }
 
     private static String toClassifierArch(String arch) {
-        if ("x86_64".equals(arch)) {
+        String canonical = normaliseArch(arch);
+        if ("x86_64".equals(canonical)) {
             return "amd64";
         }
-        if ("aarch64".equals(arch)) {
+        if ("aarch64".equals(canonical)) {
             return "arm64";
         }
-        return arch;
+        return canonical;
     }
 }
