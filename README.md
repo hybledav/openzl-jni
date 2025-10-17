@@ -12,16 +12,28 @@
 
 1. **Add the dependency**
 
-   ```xml
-   <dependency>
-     <groupId>io.github.hybledav</groupId>
-     <artifactId>openzl-jni</artifactId>
-     <version>0.1.6</version>
-     <classifier>linux_amd64</classifier>
-   </dependency>
-   ```
+     Always declare the base artifact (pure Java façade) **and** the classifier that matches your runtime so Maven pulls in both the APIs and the platform-specific native library.
 
-   Classifier jars package the native library per platform (e.g. `linux_amd64`, `macos_arm64`, `windows_amd64`). The main artifact ships the Java façade.
+     ```xml
+     <dependency>
+         <groupId>io.github.hybledav</groupId>
+         <artifactId>openzl-jni</artifactId>
+         <version>0.1.6</version>
+     </dependency>
+
+     <dependency>
+         <groupId>io.github.hybledav</groupId>
+         <artifactId>openzl-jni</artifactId>
+         <version>0.1.6</version>
+         <classifier>linux_amd64</classifier>
+     </dependency>
+     ```
+
+     Swap `linux_amd64` for the classifier that matches your target:
+
+     - `linux_amd64`
+     - `macos_arm64`
+     - `windows_amd64`
 
 2. **Compress data**
 
@@ -57,7 +69,7 @@
 - **Performance-first JNI** – zero-copy direct buffer support and reusable native contexts.
 - **Buffer pooling built in** – `OpenZLBufferManager` keeps hot paths off-heap without churn.
 - **Compression intelligence** – inspect frames for inferred graph, format version, and element counts before decoding.
-- **Multi-platform CI** – GitHub Actions build classifier jars for Linux (x64/ARM), macOS (x64/ARM), and Windows.
+- **Multi-platform CI** – GitHub Actions build classifier jars for Linux (x86_64), macOS (arm64), and Windows (x86_64).
 - **Self-contained build** – produces Maven-style jars and classifier artifacts ready to consume directly in your projects.
 
 ---
@@ -151,7 +163,6 @@ Because the SDDL program understands the row layout, the OpenZL engine can clust
 
 - **Analytics pipelines** – compress structured telemetry and numeric streams without dropping to native code.
 - **Data science workloads** – feed large numeric arrays into the NUMERIC graph for superior ratios.
-- **Edge services** – bundle platform-specific classifier jars to run OpenZL across Linux, macOS, and Windows fleets.
 - **Storage systems** – inspect frames ahead of time to choose storage tiers or validate payloads before commit.
 
 ---
