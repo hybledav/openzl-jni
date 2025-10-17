@@ -39,6 +39,7 @@ JNIEXPORT jdoubleArray JNICALL Java_io_github_hybledav_OpenZLCompressor_decompre
 JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor_describeFrameNative(JNIEnv*, jobject, jbyteArray);
 JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor_describeFrameDirectNative(JNIEnv*, jobject, jobject, jint, jint);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureSddlNative(JNIEnv*, jobject, jbyteArray);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureProfileNative(JNIEnv*, jobject, jstring, jobjectArray, jobjectArray);
 
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLSddl_compileNative(JNIEnv*, jclass, jstring, jboolean, jint);
 

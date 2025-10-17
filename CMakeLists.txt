@@ -3,6 +3,7 @@ project(openzl_jni_native LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(OPENZL_BUILD_TESTS OFF CACHE BOOL "Don't build OpenZL tests" FORCE)
 set(OPENZL_BUILD_BENCHMARKS OFF CACHE BOOL "Don't build OpenZL benchmarks" FORCE)
 set(OPENZL_BUILD_MODE opt CACHE STRING "OpenZL build mode" FORCE)
@@ -32,6 +33,7 @@ add_library(openzl_jni SHARED
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorDirect.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorMetadata.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorNumeric.cpp
+    ${openzl_SOURCE_DIR}/cli/utils/compress_profiles.cpp
 )
 set_target_properties(openzl_jni PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/cli"
@@ -54,4 +56,5 @@ target_link_libraries(openzl_jni PRIVATE
     custom_parsers
     sddl_profile
     sddl_compiler_lib
+    tools_io
 )
