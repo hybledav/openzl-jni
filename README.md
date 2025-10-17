@@ -4,7 +4,7 @@
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 [![Java 21+](https://img.shields.io/badge/java-21%2B-ff69b4.svg)](https://openjdk.org/projects/jdk/21/)
 
-> Meta’s OpenZL compression engine for the JVM — zero-copy JNI bindings, pooled buffers, and multi-platform native binaries ready for production pipelines.
+> Meta’s OpenZL compression engine for the JVM — zero-copy JNI bindings, pooled buffers.
 
 ---
 
@@ -104,7 +104,7 @@ try (OpenZLBufferManager buffers = OpenZLBufferManager.builder().build();
 
 ## Structured Data with SDDL
 
-OpenZL ships a Simple Data Description Language (SDDL) graph that can parse structured payloads before handing them to the clustering engine. The JNI bindings let you compile an SDDL program once and reuse it across many compressions. For SDDL syntax, look at [official docs](https://openzl.org/api/c/graphs/sddl/)
+OpenZL ships a Simple Data Description Language (SDDL) graph that can parse structured payloads before handing them to the clustering engine. The JNI bindings let you compile an SDDL program once, cache the bytecode, and reuse it across many compressions. For an in-depth language guide, see the [official docs](https://openzl.org/api/c/graphs/sddl/).
 
 ```java
 import io.github.hybledav.OpenZLCompressor;
