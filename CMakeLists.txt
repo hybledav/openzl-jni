@@ -79,4 +79,5 @@ target_link_libraries(openzl_jni PRIVATE
     sddl_profile
     sddl_compiler_lib
     tools_io
+    tools_training
 )

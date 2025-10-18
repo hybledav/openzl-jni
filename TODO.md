@@ -19,7 +19,7 @@
 - [x] Pre-built profiles exposed through `OpenZLProfile`
 - [x] Profile arguments via `configureProfile(OpenZLProfile, Map<String,String>)`
 - [x] Compression-level persistence across resets/profile switches
-- [ ] CLI parity for profile discovery/training workflows
+- [x] CLI parity for profile discovery/training workflows
 
 ## SDDL and structured data
 - [x] SDDL compilation (`OpenZLSddl.compile`)

@@ -422,6 +422,63 @@ public class OpenZLCompressor implements AutoCloseable {
     }
 
     private native void setDataArenaNative(int arenaOrdinal);
+    private static native String[] listProfilesNative();
+
+    public static String[] listProfiles() {
+        OpenZLNative.load();
+        String[] arr = listProfilesNative();
+        return arr == null ? new String[0] : arr;
+    }
+
+    private static native byte[][] trainNative(String profileName, byte[][] inputs,
+            int maxTimeSecs, int threads, int numSamples, boolean pareto);
+
+    // Helpers for tests: compress using a profile (untrained) and using a serialized (trained) compressor
+    public static native byte[] compressWithProfileNative(String profileName, byte[] input);
+    public static native byte[] compressWithSerializedNative(String profileName, byte[] serializedCompressor, byte[] input);
+
+    public static byte[][] train(String profileName, byte[][] inputs, TrainOptions opts) {
+        OpenZLNative.load();
+        Objects.requireNonNull(profileName, "profileName");
+        Objects.requireNonNull(inputs, "inputs");
+        if (opts == null) {
+            opts = new TrainOptions();
+        }
+        // Write inputs into a temporary directory and call native directory-based trainer.
+        try {
+            java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("openzl-train");
+            for (int i = 0; i < inputs.length; ++i) {
+                byte[] b = inputs[i];
+                java.nio.file.Path p = tmp.resolve(Integer.toString(i));
+                java.nio.file.Files.write(p, b == null ? new byte[0] : b);
+            }
+            try {
+                return trainFromDirectory(profileName, tmp.toString(), opts);
+            } finally {
+                // best-effort cleanup
+                for (java.nio.file.Path p : java.nio.file.Files.newDirectoryStream(tmp)) {
+                    try { java.nio.file.Files.deleteIfExists(p); } catch (Exception ignored) {}
+                }
+                try { java.nio.file.Files.deleteIfExists(tmp); } catch (Exception ignored) {}
+            }
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("Failed to prepare training inputs", ex);
+        }
+    }
+
+    private static native byte[][] trainFromDirectoryNative(String profileName, String dirPath,
+            int maxTimeSecs, int threads, int numSamples, boolean pareto);
+
+    public static byte[][] trainFromDirectory(String profileName, String dirPath, TrainOptions opts) {
+        OpenZLNative.load();
+        Objects.requireNonNull(profileName, "profileName");
+        Objects.requireNonNull(dirPath, "dirPath");
+        if (opts == null) {
+            opts = new TrainOptions();
+        }
+        return trainFromDirectoryNative(profileName, dirPath,
+                opts.maxTimeSecs, opts.threads, opts.numSamples, opts.paretoFrontier);
+    }
 
     @Override
     public void close() {
