@@ -201,6 +201,28 @@ All level changes are sticky until you call `reset()` or explicitly select a new
 
 ---
 
+## Training compressors from samples
+
+```java
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+Path tmp = Files.createTempDirectory("openzl-train");
+try {
+    Files.write(tmp.resolve("0"), "col1,col2\n1,2\n".getBytes());
+    Files.write(tmp.resolve("1"), "col1,col2\n3,4\n".getBytes());
+    TrainOptions opts = new TrainOptions();
+    opts.maxTimeSecs = 2;
+    byte[][] candidates = OpenZLCompressor.trainFromDirectory("csv", tmp.toString(), opts);
+    if (candidates != null && candidates.length > 0) {
+        Files.write(Path.of("trained-candidate-0.bin"), candidates[0]);
+    }
+} finally {
+    for (Path p : Files.newDirectoryStream(tmp)) Files.deleteIfExists(p);
+    Files.deleteIfExists(tmp);
+}
+```
+
 ## Planned features
 
 See [TODO.md](TODO.md) for planned features and improvements.

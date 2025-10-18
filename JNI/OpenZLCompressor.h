@@ -41,6 +41,16 @@ JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor_describeFr
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureSddlNative(JNIEnv*, jobject, jbyteArray);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureProfileNative(JNIEnv*, jobject, jstring, jobjectArray, jobjectArray);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setDataArenaNative(JNIEnv*, jobject, jint);
+JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_listProfilesNative(JNIEnv*, jclass);
+JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainNative(JNIEnv*, jclass,
+        jstring, jobjectArray, jint, jint, jint, jboolean);
+JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainFromDirectoryNative(JNIEnv*, jclass,
+        jstring, jstring, jint, jint, jint, jboolean);
+
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressWithProfileNative(JNIEnv*, jclass,
+        jstring, jbyteArray);
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressWithSerializedNative(JNIEnv*, jclass,
+        jstring, jbyteArray, jbyteArray);
 
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLSddl_compileNative(JNIEnv*, jclass, jstring, jboolean, jint);
 
