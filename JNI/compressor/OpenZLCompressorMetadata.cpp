@@ -27,11 +27,6 @@ jint inferGraphOrdinal(ZL_Type outputType, size_t compressedSize, size_t decompr
 
 jlongArray describeFrameInternal(JNIEnv* env, const uint8_t* data, size_t length)
 {
-    if (data == nullptr || length == 0) {
-        throwNew(env, JniRefs().illegalArgumentException, "Compressed payload is empty");
-        return nullptr;
-    }
-
     ZL_FrameInfo* frameInfo = ZL_FrameInfo_create(data, length);
     if (frameInfo == nullptr) {
         throwNew(env, JniRefs().illegalStateException, "Failed to create frame info");
