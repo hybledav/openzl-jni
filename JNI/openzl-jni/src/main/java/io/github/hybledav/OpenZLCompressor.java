@@ -410,6 +410,19 @@ public class OpenZLCompressor implements AutoCloseable {
         return (int) size;
     }
 
+    public enum OpenZLDataArena {
+        HEAP,
+        STACK
+    }
+
+    public void setDataArena(OpenZLDataArena arena) {
+        ensureOpen();
+        Objects.requireNonNull(arena, "arena");
+        setDataArenaNative(arena.ordinal());
+    }
+
+    private native void setDataArenaNative(int arenaOrdinal);
+
     @Override
     public void close() {
         cleanable.clean();

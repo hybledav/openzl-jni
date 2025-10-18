@@ -237,6 +237,35 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_confi
     state->setGraph(ZL_RES_value(result));
 }
 
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setDataArenaNative(JNIEnv* env,
+        jobject obj,
+        jint arenaOrdinal)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "setDataArena")) {
+        return;
+    }
+
+    if (arenaOrdinal < 0) {
+        throwNew(env, JniRefs().illegalArgumentException, "arenaOrdinal");
+        return;
+    }
+
+    // Map Java ordinal to ZL_DataArenaType
+    ZL_DataArenaType type = (arenaOrdinal == 1) ? ZL_DataArenaType_stack : ZL_DataArenaType_heap;
+
+    ZL_Report r = ZL_CCtx_setDataArena(state->cctx, type);
+    if (ZL_isError(r)) {
+        const char* ctx = ZL_CCtx_getErrorContextString(state->cctx, r);
+        std::string message = "Failed to set data arena";
+        if (ctx && ctx[0] != '\0') {
+            message.append(": ").append(ctx);
+        }
+        throwIllegalState(env, message);
+        return;
+    }
+}
+
 extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLSddl_compileNative(JNIEnv* env,
         jclass,
         jstring source,
