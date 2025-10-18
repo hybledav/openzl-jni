@@ -245,6 +245,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public byte[] compressInts(int[] data) {
         ensureOpen();
         Objects.requireNonNull(data, "data");
+        if (data.length == 0) {
+            return new byte[0];
+        }
         byte[] result = compressIntsNative(data);
         if (result == null) {
             throw new IllegalStateException("Failed to compress int array");
@@ -255,6 +258,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public byte[] compressLongs(long[] data) {
         ensureOpen();
         Objects.requireNonNull(data, "data");
+        if (data.length == 0) {
+            return new byte[0];
+        }
         byte[] result = compressLongsNative(data);
         if (result == null) {
             throw new IllegalStateException("Failed to compress long array");
@@ -265,6 +271,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public byte[] compressFloats(float[] data) {
         ensureOpen();
         Objects.requireNonNull(data, "data");
+        if (data.length == 0) {
+            return new byte[0];
+        }
         byte[] result = compressFloatsNative(data);
         if (result == null) {
             throw new IllegalStateException("Failed to compress float array");
@@ -275,6 +284,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public byte[] compressDoubles(double[] data) {
         ensureOpen();
         Objects.requireNonNull(data, "data");
+        if (data.length == 0) {
+            return new byte[0];
+        }
         byte[] result = compressDoublesNative(data);
         if (result == null) {
             throw new IllegalStateException("Failed to compress double array");
@@ -285,6 +297,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public int[] decompressInts(byte[] compressed) {
         ensureOpen();
         Objects.requireNonNull(compressed, "compressed");
+        if (compressed.length == 0) {
+            throw new IllegalArgumentException("compressed must not be empty");
+        }
         int[] result = decompressIntsNative(compressed);
         if (result == null) {
             throw new IllegalStateException("Failed to decompress int array");
@@ -295,6 +310,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public long[] decompressLongs(byte[] compressed) {
         ensureOpen();
         Objects.requireNonNull(compressed, "compressed");
+        if (compressed.length == 0) {
+            throw new IllegalArgumentException("compressed must not be empty");
+        }
         long[] result = decompressLongsNative(compressed);
         if (result == null) {
             throw new IllegalStateException("Failed to decompress long array");
@@ -305,6 +323,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public float[] decompressFloats(byte[] compressed) {
         ensureOpen();
         Objects.requireNonNull(compressed, "compressed");
+        if (compressed.length == 0) {
+            throw new IllegalArgumentException("compressed must not be empty");
+        }
         float[] result = decompressFloatsNative(compressed);
         if (result == null) {
             throw new IllegalStateException("Failed to decompress float array");
@@ -315,6 +336,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public double[] decompressDoubles(byte[] compressed) {
         ensureOpen();
         Objects.requireNonNull(compressed, "compressed");
+        if (compressed.length == 0) {
+            throw new IllegalArgumentException("compressed must not be empty");
+        }
         double[] result = decompressDoublesNative(compressed);
         if (result == null) {
             throw new IllegalStateException("Failed to decompress double array");
@@ -325,6 +349,9 @@ public class OpenZLCompressor implements AutoCloseable {
     public OpenZLCompressionInfo inspect(byte[] compressed) {
         ensureOpen();
         Objects.requireNonNull(compressed, "compressed");
+        if (compressed.length == 0) {
+            throw new IllegalArgumentException("compressed must not be empty");
+        }
         long[] meta = describeFrameNative(compressed);
         return toCompressionInfo(meta);
     }
