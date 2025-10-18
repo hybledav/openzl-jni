@@ -64,13 +64,19 @@
 
 ---
 
-## Why openzl-jni?
+## OpenZL JNI — Java bindings for OpenZL compression
 
-- **Performance-first JNI** – zero-copy direct buffer support and reusable native contexts.
-- **Buffer pooling built in** – `OpenZLBufferManager` keeps hot paths off-heap without churn.
-- **Compression intelligence** – inspect frames for inferred graph, format version, and element counts before decoding.
-- **Multi-platform CI** – GitHub Actions build classifier jars for Linux (x86_64), macOS (arm64), and Windows (x86_64).
-- **Self-contained build** – produces Maven-style jars and classifier artifacts ready to consume directly in your projects.
+Java JNI bindings for the OpenZL native compression engine. This project exposes a small, intentionally thin Java API that lets Java applications use OpenZL compressors and graphs, compile SDDL descriptions, and run the training utilities provided by OpenZL.
+
+Key features:
+
+- Zero-copy I/O: direct ByteBuffer support for avoiding extra heap copies when compressing and decompressing.
+- Buffer reuse: `OpenZLBufferManager` provides pooled buffers for common allocation patterns.
+- Compression profiles: access built-in profiles, select graphs, and serialize/deserialize compressors.
+- SDDL support: compile SDDL programs to bytecode and configure compressors to parse structured payloads.
+- Training bridge: a minimal, directory-based JNI wrapper to run OpenZL training and return serialized candidate compressors.
+- Native artifacts: Maven classifier artifacts include platform-specific native libraries (e.g. `linux_amd64`, `macos_arm64`).
+- Buildability: native components are built with CMake; Maven integration is opt-in via `-Dnative.build=true`.
 
 ---
 
