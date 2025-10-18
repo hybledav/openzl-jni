@@ -141,9 +141,10 @@ String rowStreamSddl = String.join("\n",
 byte[] compiled = OpenZLSddl.compile(rowStreamSddl, true, 0);
 byte[] payload = "12345678".repeat(256).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 
-byte[] storeCompressed;
-try (OpenZLCompressor store = new OpenZLCompressor(OpenZLGraph.STORE)) {
-    storeCompressed = store.compress(payload);
+byte[] serialCompressed;
+try (OpenZLCompressor serial = new OpenZLCompressor()) {
+    serial.configureProfile(OpenZLProfile.SERIAL, java.util.Map.of());
+    serialCompressed = serial.compress(payload);
 }
 
 byte[] sddlCompressed;
@@ -152,10 +153,10 @@ try (OpenZLCompressor sddl = new OpenZLCompressor()) {
     sddlCompressed = sddl.compress(payload);
 }
 
-System.out.printf("STORE=%d bytes, SDDL=%d bytes%n", storeCompressed.length, sddlCompressed.length);
+System.out.printf("SERIAL=%d bytes, SDDL=%d bytes%n", serialCompressed.length, sddlCompressed.length);
 ```
 
-Because the SDDL program understands the row layout, the OpenZL engine can cluster repeated fields more effectively—typically producing smaller frames than the generic STORE graph for structured datasets.
+Because the SDDL program understands the row layout, the OpenZL engine can cluster repeated fields more effectively—typically producing smaller frames than the generic SERIAL profile for structured datasets.
 
 ---
 

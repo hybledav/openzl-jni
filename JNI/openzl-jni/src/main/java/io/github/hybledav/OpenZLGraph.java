@@ -5,16 +5,21 @@ import java.util.Locale;
 /**
  * Enumerates the standard compression graphs exposed by OpenZL.
  * <p>
- * The values map to the builtin graphs provided by the native library.  The {@code id}
+ * The values map to the builtin graphs provided by the native library. The {@code id}
  * associated with each entry is used on the JNI boundary; the actual {@code ZL_GraphID}
  * values are resolved on the native side so we are resilient to upstream renumbering.
+ *
+ * Note: the STORE graph is a passthrough (no compression). It remains in the enum for
+ * compatibility with upstream identifiers, but examples and documentation should prefer
+ * using the {@link #SERIAL} profile or SDDL programs when demonstrating compression.
  */
 public enum OpenZLGraph {
     AUTO(-1, "auto", "Allow OpenZL to pick the default graph (currently zstd)."),
     ZSTD(0, "zstd", "General purpose LZ77 + entropy combination."),
     GENERIC(1, "generic", "Hybrid graph that applies lightweight transforms before entropy coding."),
     NUMERIC(2, "numeric", "Pipeline specialised for arrays of numeric primitives."),
-    STORE(3, "store", "Store inputs verbatim without compression."),
+    @Deprecated
+    STORE(3, "store", "Passthrough graph: inputs kept verbatim (no compression)."),
     BITPACK(4, "bitpack", "Bitpacking graph optimised for values with small effective range."),
     FSE(5, "fse", "Finite State Entropy only pipeline."),
     HUFFMAN(6, "huffman", "Huffman entropy coding pipeline."),
