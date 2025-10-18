@@ -33,7 +33,7 @@
 ## Buffering & memory management
 - [x] Off-heap buffer pooling (`OpenZLBufferManager`)
 - [x] Direct-buffer compressor convenience (`compress(src, buffers)` variants)
-- [ ] Data arena support (wrapping `ZL_CCtx_setDataArena` etc.)
+- [x] Data arena support (wrapping `ZL_CCtx_setDataArena` etc.)
 - [ ] Zero-copy multi-input support
 
 ## Build & packaging
