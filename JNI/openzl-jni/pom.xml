@@ -256,6 +256,43 @@
                     <publishingServerId>central</publishingServerId>
                 </configuration>
             </plugin>
+            
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>native-build</id>
+            <activation>
+                <property>
+                    <name>native.build</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>build-native-linux</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <workingDirectory>${project.parent.basedir}</workingDirectory>
+                                    <executable>sh</executable>
+                                    <arguments>
+                                        <argument>scripts/build-native.sh</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
