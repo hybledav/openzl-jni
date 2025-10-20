@@ -2,31 +2,393 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>openzl-jni — Java JNI bindings for Meta OpenZL</title>
-  <meta name="description" content="Unofficial Java JNI bindings for Meta’s OpenZL compressor — cross-platform, zero-copy JNI, pooled buffers.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenZL JNI – Java API documentation</title>
+  <meta name="description" content="Documentation for the OpenZL JNI Java bindings. Covers setup, compression, ByteBuffer use, numeric helpers, SDDL, metadata inspection, and training.">
   <meta name="robots" content="index,follow">
-  <link rel="canonical" href="https://github.com/hybledav/openzl-jni">
   <meta name="google-site-verification" content="eJeEd3bDfdvDj78BDvt6CVLTqOmqFuHOg6vxVlIYtcU">
-  <meta http-equiv="refresh" content="0; url=https://github.com/hybledav/openzl-jni">
-
+  <link rel="canonical" href="https://hybledav.github.io/openzl-jni/">
   <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #111111;
+      --fg: #f3f3f3;
+      --muted: #cccccc;
+      --accent: #9bd6ff;
+      --border: #2c2c2c;
+      --code-bg: #1b1b1b;
+    }
     body {
       margin: 0;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Noto Sans", sans-serif;
-      background: #0e0b1f;
-      color: #e7e3ff;
-      text-align: center;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
     }
-    a { color: #ad7fa8; }
-    p { color: #b7b0e6; }
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 4rem;
+    }
+    header {
+      margin-bottom: 2rem;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2.25rem;
+    }
+    header p {
+      margin: 0.75rem 0 0;
+      color: var(--muted);
+    }
+    nav {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 0;
+      margin-bottom: 2rem;
+    }
+    nav a {
+      display: inline-block;
+      margin-right: 1.25rem;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.95rem;
+    }
+    nav a:hover,
+    nav a:focus {
+      text-decoration: underline;
+    }
+    h2 {
+      margin-top: 2.5rem;
+      font-size: 1.6rem;
+    }
+    h3 {
+      margin-top: 1.75rem;
+      font-size: 1.3rem;
+    }
+    p {
+      margin: 0.75rem 0;
+      color: var(--fg);
+    }
+    ul, ol {
+      padding-left: 1.25rem;
+    }
+    li {
+      margin: 0.35rem 0;
+      color: var(--fg);
+    }
+    a {
+      color: var(--accent);
+    }
+    code {
+      font-family: "JetBrains Mono", "Fira Code", "SFMono-Regular", ui-monospace, monospace;
+      background: var(--code-bg);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.95rem;
+    }
+    pre {
+      overflow-x: auto;
+      background: var(--code-bg);
+      padding: 1rem 1.25rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      font-size: 0.95rem;
+    }
+    table th,
+    table td {
+      border: 1px solid var(--border);
+      padding: 0.6rem 0.75rem;
+      text-align: left;
+    }
+    table th {
+      background: #181818;
+      font-weight: 600;
+    }
+    footer {
+      margin-top: 3rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 1.75rem;
+    }
   </style>
 </head>
 <body>
-  <p>Redirecting to <a href="https://github.com/hybledav/openzl-jni">github.com/hybledav/openzl-jni</a>…</p>
+  <main>
+    <header>
+      <h1>OpenZL JNI – Java API documentation</h1>
+      <p>
+        Java bindings for the Meta OpenZL compressor.
+      </p>
+    </header>
+
+    <nav aria-label="table of contents">
+      <a href="#getting-started">Getting started</a>
+      <a href="#quick-start">Quick start</a>
+      <a href="#buffers">Direct buffers</a>
+      <a href="#numeric">Numeric helpers</a>
+      <a href="#sddl">SDDL</a>
+      <a href="#metadata">Frame metadata</a>
+      <a href="#profiles">Graphs &amp; profiles</a>
+      <a href="#training">Training</a>
+    </nav>
+
+    <section id="getting-started">
+      <h2>Getting started</h2>
+      <p>
+        Add the portable Java artifact and the classifier that matches your platform. Replace the classifier with
+        <code>macos_arm64</code> or <code>windows_amd64</code> when needed.
+      </p>
+      <pre><code class="language-xml">&lt;dependency&gt;
+  &lt;groupId&gt;io.github.hybledav&lt;/groupId&gt;
+  &lt;artifactId&gt;openzl-jni&lt;/artifactId&gt;
+  &lt;version&gt;VERSION&lt;/version&gt;
+&lt;/dependency&gt;
+
+&lt;dependency&gt;
+  &lt;groupId&gt;io.github.hybledav&lt;/groupId&gt;
+  &lt;artifactId&gt;openzl-jni&lt;/artifactId&gt;
+  &lt;version&gt;VERSION&lt;/version&gt;
+  &lt;classifier&gt;linux_amd64&lt;/classifier&gt;
+&lt;/dependency&gt;</code></pre>
+      <p>
+        The Java façade is compatible with Java 21+. Classes are compiled with <code>--release 11</code>.
+        <code>OpenZLNative.load()</code> extracts the bundled <code>libopenzl_jni</code> library automatically.
+      </p>
+      <p>
+        Published coordinates: <a href="https://central.sonatype.com/artifact/io.github.hybledav/openzl-jni"><code>io.github.hybledav:openzl-jni</code> on Maven Central</a>. Replace <code>VERSION</code> with the release listed there.
+      </p>
+    </section>
+
+    <section id="quick-start">
+      <h2>Quick start: byte array round trip</h2>
+      <pre><code class="language-java">import io.github.hybledav.OpenZLCompressor;
+import io.github.hybledav.OpenZLCompressionInfo;
+
+byte[] payload = "openzl-jni quick start".getBytes(StandardCharsets.UTF_8);
+
+try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+    byte[] compressed = compressor.compress(payload);
+    byte[] restored = compressor.decompress(compressed);
+
+    OpenZLCompressionInfo info = compressor.inspect(compressed);
+    System.out.printf("restored=%s, compressed=%d bytes%n",
+            java.util.Arrays.equals(payload, restored),
+            info.compressedSize());
+}</code></pre>
+      <p>
+        By default <code>OpenZLCompressor</code> uses the <code>ZSTD</code> graph. The inspect call returns size
+        information, detected graph, data flavour, element count, and format version.
+      </p>
+    </section>
+
+    <section id="buffers">
+      <h2>Direct buffers and pooling</h2>
+      <pre><code class="language-java">import io.github.hybledav.OpenZLBufferManager;
+import io.github.hybledav.OpenZLCompressor;
+
+byte[] payload = "direct buffers keep JNI zero-copy".getBytes(StandardCharsets.UTF_8);
+
+try (OpenZLBufferManager buffers = OpenZLBufferManager.builder()
+        .minimumCapacity(1 &lt;&lt; 12)
+        .alignment(256)
+        .build();
+     OpenZLCompressor compressor = new OpenZLCompressor()) {
+
+    ByteBuffer src = buffers.acquire(payload.length);
+    src.put(payload).flip();
+
+    ByteBuffer compressed = compressor.compress(src, buffers);
+    ByteBuffer restored = compressor.decompress(compressed, buffers);
+
+    byte[] roundTrip = new byte[restored.remaining()];
+    restored.get(roundTrip);
+    System.out.println("round-trip ok? " + java.util.Arrays.equals(payload, roundTrip));
+
+    buffers.release(src);
+    buffers.release(compressed);
+    buffers.release(restored);
+}</code></pre>
+      <p>
+        Use <code>compress(src, dst)</code> when you manage the destination buffer yourself. The static helper
+        <code>OpenZLCompressor.maxCompressedSize(int)</code> returns the upper bound used by <code>acquireForCompression</code>.
+      </p>
+    </section>
+
+    <section id="numeric">
+      <h2>Numeric helpers</h2>
+      <pre><code class="language-java">import io.github.hybledav.OpenZLCompressor;
+import io.github.hybledav.OpenZLCompressionInfo;
+import io.github.hybledav.OpenZLGraph;
+
+int[] readings = new int[1024];
+for (int i = 0; i &lt; readings.length; i++) {
+    readings[i] = (i % 17) * 42;
+}
+
+try (OpenZLCompressor compressor = new OpenZLCompressor(OpenZLGraph.NUMERIC)) {
+    byte[] compressed = compressor.compressInts(readings);
+    int[] restored = compressor.decompressInts(compressed);
+
+    OpenZLCompressionInfo info = compressor.inspect(compressed);
+    System.out.println("graph=" + info.graph() + ", flavor=" + info.flavor());
+}</code></pre>
+      <p>
+        Array helpers exist for <code>long</code>, <code>float</code>, and <code>double</code>. Empty arrays return <code>byte[0]</code>.
+        These methods avoid extra array-to-byte conversions when the data is already typed.
+      </p>
+    </section>
+
+    <section id="sddl">
+      <h2>Structured data with SDDL</h2>
+      <pre><code class="language-java">import io.github.hybledav.OpenZLCompressor;
+import io.github.hybledav.OpenZLProfile;
+import io.github.hybledav.OpenZLSddl;
+
+String rowStreamSddl = String.join("\n",
+        "field_width = 4;",
+        "Field1 = Byte[field_width];",
+        "Field2 = Byte[field_width];",
+        "Row = {",
+        "  Field1;",
+        "  Field2;",
+        "};",
+        "row_width = sizeof Row;",
+        "input_size = _rem;",
+        "row_count = input_size / row_width;",
+        "expect input_size % row_width == 0;",
+        "RowArray = Row[row_count];",
+        ": RowArray;");
+
+byte[] compiled = OpenZLSddl.compile(rowStreamSddl, true, 0);
+byte[] payload = "12345678".repeat(128).getBytes(StandardCharsets.US_ASCII);
+
+try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+    compressor.configureProfile(OpenZLProfile.SERIAL, java.util.Map.of());
+    byte[] serial = compressor.compress(payload);
+
+    compressor.reset();
+    compressor.configureSddl(compiled);
+    byte[] structured = compressor.compress(payload);
+
+    System.out.printf("serial=%d B, sddl=%d B%n", serial.length, structured.length);
+}</code></pre>
+      <p>
+        Reset between experiments to clear the previous graph state. SDDL can improve compression whenever the input layout
+        matches the declared structure.
+      </p>
+    </section>
+
+    <section id="metadata">
+      <h2>Inspecting frame metadata</h2>
+      <pre><code class="language-java">import io.github.hybledav.OpenZLCompressor;
+import io.github.hybledav.OpenZLCompressionInfo;
+import io.github.hybledav.OpenZLCompressionLevel;
+
+byte[] payload = "inspect me for metadata".getBytes(StandardCharsets.UTF_8);
+
+try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+    compressor.setCompressionLevel(OpenZLCompressionLevel.LEVEL_5);
+    byte[] compressed = compressor.compress(payload);
+
+    OpenZLCompressionInfo info = compressor.inspect(compressed);
+    System.out.printf("original=%d, compressed=%d, flavor=%s%n",
+            info.originalSize(),
+            info.compressedSize(),
+            info.flavor());
+}</code></pre>
+      <p>
+        <code>OpenZLCompressionInfo</code> also exposes <code>compressionRatio()</code>, the inferred <code>OpenZLGraph</code>, and
+        optional element counts for structured frames. Use <code>serialize()</code> or <code>serializeToJson()</code> to persist the compressor state.
+      </p>
+    </section>
+
+    <section id="profiles">
+      <h2>Graphs</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Graph</th>
+            <th>ID</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>AUTO</code></td><td>-1</td><td>Select the default graph (currently ZSTD).</td></tr>
+          <tr><td><code>ZSTD</code></td><td>0</td><td>General purpose LZ77 + entropy.</td></tr>
+          <tr><td><code>GENERIC</code></td><td>1</td><td>Lightweight transforms before entropy coding.</td></tr>
+          <tr><td><code>NUMERIC</code></td><td>2</td><td>Optimised for numeric primitives.</td></tr>
+          <tr><td><code>STORE</code></td><td>3</td><td>No compression (passthrough).</td></tr>
+          <tr><td><code>BITPACK</code></td><td>4</td><td>Bitpacking for small ranges.</td></tr>
+          <tr><td><code>FSE</code></td><td>5</td><td>Finite State Entropy.</td></tr>
+          <tr><td><code>HUFFMAN</code></td><td>6</td><td>Huffman-only entropy stage.</td></tr>
+          <tr><td><code>ENTROPY</code></td><td>7</td><td>Generic entropy coding.</td></tr>
+          <tr><td><code>CONSTANT</code></td><td>8</td><td>Fast path for constant or near-constant inputs.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Profiles</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Profile</th>
+            <th>Key</th>
+            <th>Use case</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>SERIAL</code></td><td><code>serial</code></td><td>General byte streams.</td></tr>
+          <tr><td><code>PYTORCH</code></td><td><code>pytorch</code></td><td>Tensors exported from PyTorch.</td></tr>
+          <tr><td><code>CSV</code></td><td><code>csv</code></td><td>Comma-separated rows.</td></tr>
+          <tr><td><code>LE&nbsp;I16</code></td><td><code>le-i16</code></td><td>Little-endian signed 16-bit sequences.</td></tr>
+          <tr><td><code>LE&nbsp;U16</code></td><td><code>le-u16</code></td><td>Little-endian unsigned 16-bit sequences.</td></tr>
+          <tr><td><code>LE&nbsp;I32</code></td><td><code>le-i32</code></td><td>Little-endian signed 32-bit values.</td></tr>
+          <tr><td><code>LE&nbsp;U32</code></td><td><code>le-u32</code></td><td>Little-endian unsigned 32-bit values.</td></tr>
+          <tr><td><code>LE&nbsp;I64</code></td><td><code>le-i64</code></td><td>Little-endian signed 64-bit values.</td></tr>
+          <tr><td><code>LE&nbsp;U64</code></td><td><code>le-u64</code></td><td>Little-endian unsigned 64-bit values.</td></tr>
+          <tr><td><code>PARQUET</code></td><td><code>parquet</code></td><td>Columnar data exported from Parquet.</td></tr>
+          <tr><td><code>SDDL</code></td><td><code>sddl</code></td><td>Precompiled SDDL programs.</td></tr>
+          <tr><td><code>SAO</code></td><td><code>sao</code></td><td>Sample Adaptive Optimisation pipeline.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        List available profiles at runtime with <code>OpenZLCompressor.listProfiles()</code>. Use
+        <code>configureProfile(profile, Map&lt;String,String&gt; args)</code> to pass profile-specific parameters.
+      </p>
+    </section>
+
+    <section id="training">
+      <h2>Training</h2>
+      <p>
+        Two convenience methods expose the native trainer:
+      </p>
+      <ul>
+        <li><code>OpenZLCompressor.train(String profile, byte[][] inputs, TrainOptions opts)</code></li>
+        <li><code>OpenZLCompressor.trainFromDirectory(String profile, String dir, TrainOptions opts)</code></li>
+      </ul>
+      <p>
+        <code>TrainOptions</code> lets you control the maximum time, parallelism, requested sample count, and whether to compute
+        the Pareto frontier. The helper writes samples to a temporary directory, hands it to the native trainer, and returns
+        serialized compressors that you can feed back into <code>configureProfile</code>.
+      </p>
+      <p>
+        Streaming APIs are tracked upstream in <a href="https://github.com/facebook/openzl/issues/128">OpenZL issue #128</a>; follow <a href="https://github.com/hybledav/openzl-jni/blob/main/TODO.md"><code>TODO.md</code></a> for progress in this repository.
+      </p>
+    </section>
+
+    <footer>
+      OpenZL JNI is released under the BSD-3-Clause license. Source code:
+      <a href="https://github.com/hybledav/openzl-jni">github.com/hybledav/openzl-jni</a> —
+      documentation mirrored in the <a href="https://github.com/hybledav/openzl-jni/blob/main/README.md">project README</a>.
+    </footer>
+  </main>
 </body>
 </html>

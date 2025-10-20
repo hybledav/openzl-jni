@@ -3,6 +3,7 @@
 [![CI](https://github.com/hybledav/openzl-jni/actions/workflows/ci.yml/badge.svg)](https://github.com/hybledav/openzl-jni/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 [![Java 21+](https://img.shields.io/badge/java-21%2B-ff69b4.svg)](https://openjdk.org/projects/jdk/21/)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.hybledav/openzl-jni.svg)](https://central.sonatype.com/artifact/io.github.hybledav/openzl-jni)
 
 > Meta’s OpenZL compression engine for the JVM — zero-copy JNI bindings, pooled buffers.
 
@@ -18,16 +19,18 @@
      <dependency>
          <groupId>io.github.hybledav</groupId>
          <artifactId>openzl-jni</artifactId>
-         <version>0.1.7</version>
+         <version>VERSION</version>
      </dependency>
 
      <dependency>
          <groupId>io.github.hybledav</groupId>
          <artifactId>openzl-jni</artifactId>
-         <version>0.1.7</version>
+         <version>VERSION</version>
          <classifier>linux_amd64</classifier>
      </dependency>
      ```
+
+     Replace `VERSION` with the release shown on [Maven Central](https://central.sonatype.com/artifact/io.github.hybledav/openzl-jni).
 
      Swap `linux_amd64` for the classifier that matches your target:
 
@@ -83,40 +86,36 @@ Key features:
 ## Quick Usage
 
 ```java
-import io.github.hybledav.OpenZLBufferManager;
-import io.github.hybledav.OpenZLCompressor;
+var payload = "example".getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
-byte[] payload = ...;
-
-// Byte array round-trip
-try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+// Byte arrays
+try (var compressor = new OpenZLCompressor()) {
     byte[] compressed = compressor.compress(payload);
-    byte[] restored   = compressor.decompress(compressed);
+    byte[] restored = compressor.decompress(compressed);
 }
 
-// Direct buffers for zero-copy paths
-try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+// Direct buffers
+try (var compressor = new OpenZLCompressor()) {
     var src = java.nio.ByteBuffer.allocateDirect(payload.length);
     src.put(payload).flip();
-    var dst = java.nio.ByteBuffer.allocateDirect(payload.length + 4096);
+    var dst = java.nio.ByteBuffer.allocateDirect(OpenZLCompressor.maxCompressedSize(payload.length));
     compressor.compress(src, dst);
 }
 
-// Reusable buffer manager
-try (OpenZLBufferManager buffers = OpenZLBufferManager.builder().build();
-        OpenZLCompressor compressor = new OpenZLCompressor()) {
+// Buffer pooling
+try (var buffers = OpenZLBufferManager.builder().build();
+     var compressor = new OpenZLCompressor()) {
     var src = buffers.acquire(payload.length);
     src.put(payload).flip();
     var compressed = compressor.compress(src, buffers);
-    buffers.release(src);
-
     var restored = compressor.decompress(compressed, buffers);
+    buffers.release(src);
     buffers.release(compressed);
     buffers.release(restored);
 }
 ```
 
-`OpenZLCompressor.maxCompressedSize(inputLength)` exposes `ZL_compressBound`, handy when sizing pre-allocated buffers.
+`OpenZLCompressor.maxCompressedSize(int)` exposes `ZL_compressBound`, handy when sizing direct buffers.
 
 ---
 
@@ -162,7 +161,7 @@ try (OpenZLCompressor sddl = new OpenZLCompressor()) {
 System.out.printf("SERIAL=%d bytes, SDDL=%d bytes%n", serialCompressed.length, sddlCompressed.length);
 ```
 
-Because the SDDL program understands the row layout, the OpenZL engine can cluster repeated fields more effectively—typically producing smaller frames than the generic SERIAL profile for structured datasets.
+Capture both outputs and choose the one that meets your size or latency goals; the best option depends on the data set.
 
 ---
 
