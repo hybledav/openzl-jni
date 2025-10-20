@@ -38,6 +38,34 @@ class TestOpenZLNativeMapping {
         assertEquals("amd64", invokeToClassifierArch("x64"), "x64 should reuse amd64 classifier to match packaged resources");
     }
 
+    @Test
+    void normaliseOsHandlesCommonVariants() throws Exception {
+        assertEquals("linux", invokeNormaliseOs("Linux"));
+        assertEquals("macos", invokeNormaliseOs("Mac OS X"));
+        assertEquals("windows", invokeNormaliseOs("Windows 11"));
+        assertEquals("custom_os", invokeNormaliseOs("Custom-OS"));
+    }
+
+    private static String invokeNormaliseOs(String value) throws Exception {
+        Method method = OpenZLNative.class.getDeclaredMethod("normaliseOs", String.class);
+        method.setAccessible(true);
+        return (String) method.invoke(null, value);
+    }
+
+    @Test
+    void normaliseArchCoversAdditionalFamilies() {
+        assertEquals("x86", invokeNormaliseArch("i686"));
+        assertEquals("aarch64", invokeNormaliseArch("ARM64"));
+        assertEquals("arm", invokeNormaliseArch("armv7"));
+        assertEquals("weird_cpu", invokeNormaliseArch("Weird CPU"));
+    }
+
+    @Test
+    void classifierFallbackUsesCanonicalValue() {
+        assertEquals("arm64", invokeToClassifierArch("arm64"));
+        assertEquals("mips", invokeToClassifierArch("mips"));
+    }
+
     private static String[] invokeBuildCandidatePaths(String os, String arch, String classifierArch, String mapped) {
         try {
             Method method = OpenZLNative.class.getDeclaredMethod(

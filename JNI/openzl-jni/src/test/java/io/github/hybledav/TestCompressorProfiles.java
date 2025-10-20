@@ -31,6 +31,11 @@ class TestCompressorProfiles {
     }
 
     @Test
+    void fromNameRejectsNull() {
+        assertThrows(NullPointerException.class, () -> OpenZLProfile.fromName(null));
+    }
+
+    @Test
     void sddlProfileRequiresDescription() {
         try (OpenZLCompressor compressor = new OpenZLCompressor()) {
             IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
