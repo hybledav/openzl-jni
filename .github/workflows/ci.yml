@@ -199,32 +199,10 @@ jobs:
       - name: Summarize coverage
         id: coverage-summary
         run: |
-          python3 <<'PY'
-import os
-import xml.etree.ElementTree as ET
-from pathlib import Path
-
-report = ET.parse('JNI/openzl-jni/target/site/jacoco/jacoco.xml').getroot()
-totals = {c.get('type'): (int(c.get('missed')), int(c.get('covered'))) for c in report.findall('counter')}
-
-def line(name):
-    missed, covered = totals.get(name, (0, 0))
-    total = missed + covered
-    pct = 0.0 if total == 0 else covered * 100.0 / total
-    return pct, covered, total
-
-sections = []
-for metric in ('LINE', 'BRANCH', 'METHOD'):
-    pct, covered, total = line(metric)
-    sections.append(f"- {metric.title()}: {pct:.2f}% ({covered}/{total})")
-
-summary = "## Coverage Summary\n" + "\n".join(sections) + "\n"
-
-Path("coverage-summary.txt").write_text(summary, encoding="utf-8")
-
-with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as fh:
-    fh.write(summary)
-PY
+          python3 scripts/coverage_summary.py \
+            --report JNI/openzl-jni/target/site/jacoco/jacoco.xml \
+            --output coverage-summary.txt \
+            --append-to-summary
 
       - name: Upload coverage summary
         uses: actions/upload-artifact@v4
