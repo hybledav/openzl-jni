@@ -146,9 +146,85 @@ jobs:
             JNI/openzl-jni/target/openzl-jni-${REVISION}.jar
             JNI/openzl-jni/src/main/resources/lib/${{ matrix.classifier }}/**
 
+  coverage:
+    name: Coverage
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Temurin JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Configure CMake
+        run: cmake -S . -B cmake_build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Re-apply vendored source patches after configure
+        run: |
+          if [ -f "${{ github.workspace }}/patches/fix_future_capture.py" ]; then
+            python3 "${{ github.workspace }}/patches/fix_future_capture.py" || true
+          fi
+
+      - name: Build native library
+        run: cmake --build cmake_build --target openzl_jni
+
+      - name: Stage native artifact
+        run: |
+          dest="JNI/openzl-jni/src/main/resources/lib/linux_amd64"
+          mkdir -p "$dest"
+          cp "cmake_build/cli/libopenzl_jni.so" "$dest/"
+
+      - name: Generate coverage report
+        run: |
+          mvn -ntp -f JNI/pom.xml -pl openzl-jni -am \
+            org.jacoco:jacoco-maven-plugin:0.8.11:prepare-agent \
+            test \
+            org.jacoco:jacoco-maven-plugin:0.8.11:report
+
+      - name: Attach coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          retention-days: 7
+          path: JNI/openzl-jni/target/site/jacoco
+
+      - name: Summarize coverage
+        run: |
+          python3 <<'PY'
+import os
+import xml.etree.ElementTree as ET
+report = ET.parse('JNI/openzl-jni/target/site/jacoco/jacoco.xml').getroot()
+totals = {c.get('type'): (int(c.get('missed')), int(c.get('covered'))) for c in report.findall('counter')}
+
+def line(name):
+    missed, covered = totals.get(name, (0, 0))
+    total = missed + covered
+    pct = 0.0 if total == 0 else covered * 100.0 / total
+    return pct, covered, total
+
+sections = []
+for metric in ('LINE', 'BRANCH', 'METHOD'):
+    pct, covered, total = line(metric)
+    sections.append(f"- {metric.title()}: {pct:.2f}% ({covered}/{total})")
+
+summary = "## Coverage Summary\n" + "\n".join(sections) + "\n"
+with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as fh:
+    fh.write(summary)
+PY
+
   publish:
     name: Publish Artifacts
-    needs: build
+    needs:
+      - build
+      - coverage
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     env:
