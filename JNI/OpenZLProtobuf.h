@@ -8,9 +8,11 @@ extern "C" {
 #endif
 
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertNative(JNIEnv*, jclass,
-        jbyteArray, jint, jint, jbyteArray);
+        jbyteArray, jint, jint, jbyteArray, jstring);
 JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_trainNative(JNIEnv*, jclass,
-        jobjectArray, jint, jint, jint, jint, jboolean);
+        jobjectArray, jint, jint, jint, jint, jboolean, jstring);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_registerSchemaNative(JNIEnv*, jclass,
+        jbyteArray);
 
 #ifdef __cplusplus
 }

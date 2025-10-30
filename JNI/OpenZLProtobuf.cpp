@@ -2,15 +2,20 @@
 #include "OpenZLNativeSupport.h"
 
 #include <memory>
+#include <mutex>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/descriptor.pb.h"
+#include "google/protobuf/descriptor_database.h"
+#include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/util/json_util.h"
 #include "openzl/shared/string_view.h"
 #include "tools/protobuf/ProtoDeserializer.h"
 #include "tools/protobuf/ProtoGraph.h"
 #include "tools/protobuf/ProtoSerializer.h"
-#include "schema.pb.h"
 #include "tools/training/train.h"
 #include "tools/training/train_params.h"
 #include "tools/training/utils/utils.h"
@@ -67,11 +72,31 @@ jbyteArray makeByteArray(JNIEnv* env, const std::string& data)
     return out;
 }
 
+std::string requireMessageType(JNIEnv* env, jstring typeName)
+{
+    if (typeName == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "messageType");
+        return {};
+    }
+    const char* chars = env->GetStringUTFChars(typeName, nullptr);
+    if (chars == nullptr) {
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to read messageType");
+        return {};
+    }
+    std::string out(chars);
+    env->ReleaseStringUTFChars(typeName, chars);
+    if (out.empty()) {
+        throwIllegalArgument(env, "messageType must not be empty");
+        return {};
+    }
+    return out;
+}
+
 void parseIntoMessage(
         JNIEnv* env,
         Protocol protocol,
         const std::string& payload,
-        openzl::protobuf::Schema& message,
+        google::protobuf::Message& message,
         openzl::protobuf::ProtoDeserializer& deserializer)
 {
     switch (protocol) {
@@ -98,7 +123,7 @@ void parseIntoMessage(
 std::string serialiseMessage(
         JNIEnv* env,
         Protocol protocol,
-        const openzl::protobuf::Schema& message,
+        const google::protobuf::Message& message,
         openzl::protobuf::ProtoSerializer& serializer)
 {
     switch (protocol) {
@@ -123,6 +148,107 @@ std::string serialiseMessage(
     throwIllegalState(env, "Unhandled protocol");
     return {};
 }
+
+class DescriptorRegistry {
+public:
+    static DescriptorRegistry& instance()
+    {
+        static DescriptorRegistry registry;
+        return registry;
+    }
+
+    void registerDescriptorSet(const google::protobuf::FileDescriptorSet& set)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        registerDescriptorSetLocked(set);
+    }
+
+    std::unique_ptr<google::protobuf::Message> newMessage(const std::string& type)
+    {
+        if (type.empty()) {
+            throw std::runtime_error("Protobuf message type must not be empty");
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        return newMessageLocked(type);
+    }
+
+    bool hasType(const std::string& type)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return findDescriptorLocked(type) != nullptr;
+    }
+
+private:
+    DescriptorRegistry()
+            : generated_db_(*google::protobuf::DescriptorPool::generated_pool()),
+              merged_db_(&file_db_, &generated_db_),
+              pool_(&merged_db_),
+              factory_(&pool_)
+    {
+        factory_.SetDelegateToGeneratedFactory(true);
+    }
+
+    void registerDescriptorSetLocked(const google::protobuf::FileDescriptorSet& set)
+    {
+        bool added = false;
+        for (const auto& file : set.file()) {
+            if (file_db_.Add(file)) {
+                added = true;
+            }
+        }
+
+        if (added) {
+            for (const auto& file : set.file()) {
+                if (pool_.FindFileByName(file.name()) == nullptr) {
+                    throw std::runtime_error("Failed to load descriptor: " + file.name());
+                }
+            }
+        }
+    }
+
+    const google::protobuf::Descriptor* findDescriptorLocked(const std::string& type)
+    {
+        if (type.empty()) {
+            return nullptr;
+        }
+        const auto* desc = pool_.FindMessageTypeByName(type);
+        if (desc != nullptr) {
+            return desc;
+        }
+        return google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(type);
+    }
+
+    std::unique_ptr<google::protobuf::Message> newMessageLocked(const std::string& type)
+    {
+        const auto* desc = findDescriptorLocked(type);
+        if (desc == nullptr) {
+            throw std::runtime_error("Unknown protobuf message type: " + type);
+        }
+
+        const google::protobuf::Message* prototype = nullptr;
+        if (desc->file()->pool() == &pool_) {
+            prototype = factory_.GetPrototype(desc);
+        } else {
+            prototype = google::protobuf::MessageFactory::generated_factory()->GetPrototype(desc);
+        }
+        if (prototype == nullptr) {
+            throw std::runtime_error("Unable to create prototype for protobuf message type: " + type);
+        }
+        return std::unique_ptr<google::protobuf::Message>(prototype->New());
+    }
+
+    std::mutex mutex_;
+    google::protobuf::SimpleDescriptorDatabase file_db_;
+    google::protobuf::DescriptorPoolDatabase generated_db_;
+    google::protobuf::MergedDescriptorDatabase merged_db_;
+    google::protobuf::DescriptorPool pool_;
+    google::protobuf::DynamicMessageFactory factory_;
+};
+
+std::unique_ptr<google::protobuf::Message> makeMessage(const std::string& type)
+{
+    return DescriptorRegistry::instance().newMessage(type);
+}
 } // namespace
 
 extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertNative(
@@ -131,7 +257,8 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
         jbyteArray payload,
         jint inputProtocol,
         jint outputProtocol,
-        jbyteArray compressorBytes)
+        jbyteArray compressorBytes,
+        jstring messageType)
 {
     if (payload == nullptr) {
         throwNew(env, JniRefs().nullPointerException, "payload");
@@ -147,6 +274,11 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
         return nullptr;
     }
 
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
     try {
         openzl::protobuf::ProtoSerializer serializer;
         if (compressorBytes != nullptr) {
@@ -157,14 +289,14 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
         }
 
         openzl::protobuf::ProtoDeserializer deserializer;
-        openzl::protobuf::Schema message;
+        auto message = makeMessage(typeName);
         std::string input = copyArray(env, payload);
-        parseIntoMessage(env, inProto, input, message, deserializer);
+        parseIntoMessage(env, inProto, input, *message, deserializer);
         if (env->ExceptionCheck()) {
             return nullptr;
         }
 
-        std::string result = serialiseMessage(env, outProto, message, serializer);
+        std::string result = serialiseMessage(env, outProto, *message, serializer);
         if (env->ExceptionCheck()) {
             return nullptr;
         }
@@ -183,7 +315,8 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
         jint maxTimeSecs,
         jint threads,
         jint numSamples,
-        jboolean pareto)
+        jboolean pareto,
+        jstring messageType)
 {
     if (samples == nullptr) {
         throwNew(env, JniRefs().nullPointerException, "samples");
@@ -197,6 +330,11 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
     }
 
     Protocol inProto = parseProtocol(env, inputProtocol);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
     if (env->ExceptionCheck()) {
         return nullptr;
     }
@@ -216,13 +354,13 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             std::string payload = copyArray(env, sample);
             env->DeleteLocalRef(sample);
 
-            openzl::protobuf::Schema message;
-            parseIntoMessage(env, inProto, payload, message, deserializer);
+            auto message = makeMessage(typeName);
+            parseIntoMessage(env, inProto, payload, *message, deserializer);
             if (env->ExceptionCheck()) {
                 return nullptr;
             }
 
-            auto trainingInputs = serializer.getTrainingInputs(message);
+            auto trainingInputs = serializer.getTrainingInputs(*message);
             openzl::training::MultiInput multi;
             for (auto& input : trainingInputs) {
                 multi.add(std::move(input));
@@ -284,5 +422,33 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
     } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
         return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_registerSchemaNative(
+        JNIEnv* env,
+        jclass,
+        jbyteArray descriptorBytes)
+{
+    if (descriptorBytes == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "descriptorBytes");
+        return;
+    }
+
+    std::string buffer = copyArray(env, descriptorBytes);
+    if (env->ExceptionCheck()) {
+        return;
+    }
+
+    google::protobuf::FileDescriptorSet set;
+    if (!set.ParseFromString(buffer)) {
+        throwIllegalArgument(env, "Failed to parse descriptor set");
+        return;
+    }
+
+    try {
+        DescriptorRegistry::instance().registerDescriptorSet(set);
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
     }
 }
