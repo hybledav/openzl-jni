@@ -8,6 +8,7 @@ set(OPENZL_BUILD_TESTS OFF CACHE BOOL "Don't build OpenZL tests" FORCE)
 set(OPENZL_BUILD_BENCHMARKS OFF CACHE BOOL "Don't build OpenZL benchmarks" FORCE)
 set(OPENZL_BUILD_MODE opt CACHE STRING "OpenZL build mode" FORCE)
 set(OPENZL_BUILD_TOOLS ON CACHE BOOL "Build OpenZL tools for JNI" FORCE)
+set(OPENZL_BUILD_PROTOBUF_TOOLS ON CACHE BOOL "Build OpenZL protobuf tooling for JNI" FORCE)
 
 include(FetchContent)
 
@@ -23,6 +24,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(openzl)
 
 find_package(JNI REQUIRED)
+find_package(protobuf CONFIG REQUIRED)
+include(FindProtobuf)
+
+set(OPENZL_PROTOBUF_SCHEMA ${openzl_SOURCE_DIR}/tools/protobuf/schema.proto)
+protobuf_generate_cpp(OPENZL_JNI_PROTO_SRCS OPENZL_JNI_PROTO_HDRS ${OPENZL_PROTOBUF_SCHEMA})
 
 if(TARGET custom_parsers AND TARGET pytorch_model_parser)
     target_link_libraries(custom_parsers pytorch_model_parser)
@@ -51,11 +57,13 @@ set(OPENZL_JNI_DIR ${PROJECT_SOURCE_DIR}/JNI)
 add_library(openzl_jni SHARED
     ${OPENZL_JNI_DIR}/OpenZLCompressor.cpp
     ${OPENZL_JNI_DIR}/OpenZLNativeSupport.cpp
+    ${OPENZL_JNI_DIR}/OpenZLProtobuf.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorArrays.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorDirect.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorMetadata.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorNumeric.cpp
     ${openzl_SOURCE_DIR}/cli/utils/compress_profiles.cpp
+    ${OPENZL_JNI_PROTO_SRCS}
 )
 set_target_properties(openzl_jni PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/cli"
@@ -70,6 +78,7 @@ target_include_directories(openzl_jni PRIVATE
     ${openzl_SOURCE_DIR}/tools
     ${openzl_BINARY_DIR}/include
     ${openzl_BINARY_DIR}/tools
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${OPENZL_JNI_DIR}
     ${JNI_INCLUDE_DIRS}
 )
@@ -80,4 +89,6 @@ target_link_libraries(openzl_jni PRIVATE
     sddl_compiler_lib
     tools_io
     tools_training
+    protobuf_serializer
+    protobuf::libprotobuf
 )
