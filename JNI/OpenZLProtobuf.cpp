@@ -161,7 +161,7 @@ void configureSerializer(openzl::protobuf::ProtoSerializer& serializer)
     try {
         if (auto* compressor = serializer.getCompressor()) {
             compressor->setParameter(openzl::CParam::CompressionLevel, 0);
-            compressor->setParameter(openzl::CParam::MinStreamSize, 4096);
+            compressor->setParameter(openzl::CParam::MinStreamSize, 0);
         }
     } catch (...) {
         // Silently ignore tuning failures; conversion will fall back to defaults.
@@ -280,6 +280,82 @@ google::protobuf::Message& reusableMessage(const std::string& type)
     message->Clear();
     return *message;
 }
+
+openzl::protobuf::ProtoSerializer& serializerForType(const std::string& type)
+{
+    thread_local std::unordered_map<std::string, std::unique_ptr<openzl::protobuf::ProtoSerializer>> cache;
+    auto it = cache.find(type);
+    if (it == cache.end()) {
+        auto serializer = std::make_unique<openzl::protobuf::ProtoSerializer>();
+        configureSerializer(*serializer);
+        it = cache.emplace(type, std::move(serializer)).first;
+    }
+    return *it->second;
+}
+
+openzl::protobuf::ProtoDeserializer& deserializerForType(const std::string& type)
+{
+    thread_local std::unordered_map<std::string, std::unique_ptr<openzl::protobuf::ProtoDeserializer>> cache;
+    auto it = cache.find(type);
+    if (it == cache.end()) {
+        it = cache.emplace(type, std::make_unique<openzl::protobuf::ProtoDeserializer>()).first;
+    }
+    return *it->second;
+}
+
+jbyteArray convertPayload(JNIEnv* env,
+        Protocol inProto,
+        Protocol outProto,
+        const void* payloadPtr,
+        size_t payloadLength,
+        jbyteArray compressorBytes,
+        const std::string& typeName)
+{
+    try {
+        openzl::protobuf::ProtoSerializer localSerializer;
+        openzl::protobuf::ProtoSerializer* serializerPtr = nullptr;
+        if (compressorBytes != nullptr) {
+            std::string serialized = copyArray(env, compressorBytes);
+            if (env->ExceptionCheck()) {
+                return nullptr;
+            }
+            openzl::Compressor trained;
+            trained.deserialize(serialized);
+            localSerializer.setCompressor(std::move(trained));
+            configureSerializer(localSerializer);
+            serializerPtr = &localSerializer;
+        } else {
+            serializerPtr = &serializerForType(typeName);
+        }
+
+        openzl::protobuf::ProtoDeserializer& deserializer =
+                deserializerForType(typeName);
+        google::protobuf::Message& message = reusableMessage(typeName);
+        if (inProto == Protocol::Proto) {
+            if (payloadLength > 0
+                    && !message.ParseFromArray(payloadPtr, static_cast<int>(payloadLength))) {
+                throwIllegalArgument(env, "Failed to parse protobuf payload");
+                return nullptr;
+            }
+        } else {
+            const char* charPtr = static_cast<const char*>(payloadPtr);
+            std::string payload(charPtr, payloadLength);
+            parseIntoMessage(env, inProto, payload, message, deserializer);
+            if (env->ExceptionCheck()) {
+                return nullptr;
+            }
+        }
+
+        std::string result = serialiseMessage(env, outProto, message, *serializerPtr);
+        if (env->ExceptionCheck()) {
+            return nullptr;
+        }
+        return makeByteArray(env, result);
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
 } // namespace
 
 extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertNative(
@@ -311,6 +387,74 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     }
 
     try {
+        jsize length = env->GetArrayLength(payload);
+        jboolean isCopy = JNI_FALSE;
+        jbyte* raw = env->GetByteArrayElements(payload, &isCopy);
+        if (raw == nullptr) {
+            throwNew(env, JniRefs().outOfMemoryError, "Failed to access payload contents");
+            return nullptr;
+        }
+        jbyteArray result = convertPayload(env,
+                inProto,
+                outProto,
+                static_cast<const void*>(raw),
+                static_cast<size_t>(length),
+                compressorBytes,
+                typeName);
+        env->ReleaseByteArrayElements(payload, raw, JNI_ABORT);
+        return result;
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectNative(
+        JNIEnv* env,
+        jclass,
+        jobject payloadBuffer,
+        jint length,
+        jint inputProtocol,
+        jint outputProtocol,
+        jbyteArray compressorBytes,
+        jstring messageType)
+{
+    if (payloadBuffer == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "payload");
+        return nullptr;
+    }
+    if (length < 0) {
+        throwIllegalArgument(env, "length must be non-negative");
+        return nullptr;
+    }
+
+    void* directAddress = env->GetDirectBufferAddress(payloadBuffer);
+    if (directAddress == nullptr) {
+        throwIllegalArgument(env, "payload must be a direct ByteBuffer");
+        return nullptr;
+    }
+    const char* payloadPtr = static_cast<const char*>(directAddress);
+
+    Protocol inProto = parseProtocol(env, inputProtocol);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+    Protocol outProto = parseProtocol(env, outputProtocol);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    if (inProto != Protocol::Proto) {
+        throwIllegalArgument(env, "Direct conversion currently supports PROTO input only");
+        return nullptr;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    try {
         thread_local openzl::protobuf::ProtoSerializer threadSerializer;
         thread_local openzl::protobuf::ProtoDeserializer threadDeserializer;
 
@@ -326,16 +470,13 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
             localSerializer.setCompressor(std::move(trained));
             serializerPtr = &localSerializer;
         }
+
         configureSerializer(*serializerPtr);
 
-        openzl::protobuf::ProtoDeserializer& deserializer = threadDeserializer;
         google::protobuf::Message& message = reusableMessage(typeName);
-        std::string input = copyArray(env, payload);
-        if (env->ExceptionCheck()) {
-            return nullptr;
-        }
-        parseIntoMessage(env, inProto, input, message, deserializer);
-        if (env->ExceptionCheck()) {
+        message.Clear();
+        if (length > 0 && !message.ParseFromArray(payloadPtr, static_cast<int>(length))) {
+            throwIllegalArgument(env, "Failed to parse protobuf payload");
             return nullptr;
         }
 
@@ -344,6 +485,71 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
             return nullptr;
         }
         return makeByteArray(env, result);
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertSliceNative(
+        JNIEnv* env,
+        jclass,
+        jbyteArray payload,
+        jint offset,
+        jint length,
+        jint inputProtocol,
+        jint outputProtocol,
+        jbyteArray compressorBytes,
+        jstring messageType)
+{
+    if (payload == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "payload");
+        return nullptr;
+    }
+    if (offset < 0 || length < 0) {
+        throwIllegalArgument(env, "offset and length must be non-negative");
+        return nullptr;
+    }
+    jsize payloadLength = env->GetArrayLength(payload);
+    if (offset > payloadLength || offset + length > payloadLength) {
+        throwIllegalArgument(env, "offset/length exceed payload bounds");
+        return nullptr;
+    }
+
+    Protocol inProto = parseProtocol(env, inputProtocol);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+    Protocol outProto = parseProtocol(env, outputProtocol);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    const jbyte* raw = static_cast<const jbyte*>(
+            env->GetPrimitiveArrayCritical(payload, nullptr));
+    if (raw == nullptr) {
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to access payload contents");
+        return nullptr;
+    }
+    std::string input(reinterpret_cast<const char*>(raw + offset), static_cast<size_t>(length));
+    env->ReleasePrimitiveArrayCritical(payload, const_cast<jbyte*>(raw), JNI_ABORT);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    try {
+        return convertPayload(env,
+                inProto,
+                outProto,
+                input.data(),
+                input.size(),
+                compressorBytes,
+                typeName);
     } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
         return nullptr;
