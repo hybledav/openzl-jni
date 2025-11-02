@@ -1,10 +1,13 @@
 #include "OpenZLProtobuf.h"
 #include "OpenZLNativeSupport.h"
 
+#include <cstring>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 #include "google/protobuf/descriptor.h"
@@ -12,6 +15,7 @@
 #include "google/protobuf/descriptor_database.h"
 #include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/util/json_util.h"
+#include "openzl/cpp/CParam.hpp"
 #include "openzl/shared/string_view.h"
 #include "tools/protobuf/ProtoDeserializer.h"
 #include "tools/protobuf/ProtoGraph.h"
@@ -45,13 +49,16 @@ std::string copyArray(JNIEnv* env, jbyteArray array)
     jsize length = env->GetArrayLength(array);
     std::string data;
     data.resize(static_cast<size_t>(length));
-    if (length > 0) {
-        env->GetByteArrayRegion(
-                array,
-                0,
-                length,
-                reinterpret_cast<jbyte*>(data.data()));
+    if (length == 0) {
+        return data;
     }
+    void* raw = env->GetPrimitiveArrayCritical(array, nullptr);
+    if (raw == nullptr) {
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to access array contents");
+        return {};
+    }
+    std::memcpy(data.data(), raw, static_cast<size_t>(length));
+    env->ReleasePrimitiveArrayCritical(array, raw, JNI_ABORT);
     return data;
 }
 
@@ -147,6 +154,18 @@ std::string serialiseMessage(
     }
     throwIllegalState(env, "Unhandled protocol");
     return {};
+}
+
+void configureSerializer(openzl::protobuf::ProtoSerializer& serializer)
+{
+    try {
+        if (auto* compressor = serializer.getCompressor()) {
+            compressor->setParameter(openzl::CParam::CompressionLevel, 0);
+            compressor->setParameter(openzl::CParam::MinStreamSize, 4096);
+        }
+    } catch (...) {
+        // Silently ignore tuning failures; conversion will fall back to defaults.
+    }
 }
 
 class DescriptorRegistry {
@@ -249,6 +268,18 @@ std::unique_ptr<google::protobuf::Message> makeMessage(const std::string& type)
 {
     return DescriptorRegistry::instance().newMessage(type);
 }
+
+google::protobuf::Message& reusableMessage(const std::string& type)
+{
+    thread_local std::unordered_map<std::string, std::unique_ptr<google::protobuf::Message>> cache;
+    auto it = cache.find(type);
+    if (it == cache.end()) {
+        it = cache.emplace(type, makeMessage(type)).first;
+    }
+    google::protobuf::Message* message = it->second.get();
+    message->Clear();
+    return *message;
+}
 } // namespace
 
 extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertNative(
@@ -280,23 +311,35 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     }
 
     try {
-        openzl::protobuf::ProtoSerializer serializer;
+        thread_local openzl::protobuf::ProtoSerializer threadSerializer;
+        thread_local openzl::protobuf::ProtoDeserializer threadDeserializer;
+
+        openzl::protobuf::ProtoSerializer localSerializer;
+        openzl::protobuf::ProtoSerializer* serializerPtr = &threadSerializer;
         if (compressorBytes != nullptr) {
             std::string serialized = copyArray(env, compressorBytes);
+            if (env->ExceptionCheck()) {
+                return nullptr;
+            }
             openzl::Compressor trained;
             trained.deserialize(serialized);
-            serializer.setCompressor(std::move(trained));
+            localSerializer.setCompressor(std::move(trained));
+            serializerPtr = &localSerializer;
         }
+        configureSerializer(*serializerPtr);
 
-        openzl::protobuf::ProtoDeserializer deserializer;
-        auto message = makeMessage(typeName);
+        openzl::protobuf::ProtoDeserializer& deserializer = threadDeserializer;
+        google::protobuf::Message& message = reusableMessage(typeName);
         std::string input = copyArray(env, payload);
-        parseIntoMessage(env, inProto, input, *message, deserializer);
+        if (env->ExceptionCheck()) {
+            return nullptr;
+        }
+        parseIntoMessage(env, inProto, input, message, deserializer);
         if (env->ExceptionCheck()) {
             return nullptr;
         }
 
-        std::string result = serialiseMessage(env, outProto, *message, serializer);
+        std::string result = serialiseMessage(env, outProto, message, *serializerPtr);
         if (env->ExceptionCheck()) {
             return nullptr;
         }
@@ -354,13 +397,13 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             std::string payload = copyArray(env, sample);
             env->DeleteLocalRef(sample);
 
-            auto message = makeMessage(typeName);
-            parseIntoMessage(env, inProto, payload, *message, deserializer);
+            google::protobuf::Message& message = reusableMessage(typeName);
+            parseIntoMessage(env, inProto, payload, message, deserializer);
             if (env->ExceptionCheck()) {
                 return nullptr;
             }
 
-            auto trainingInputs = serializer.getTrainingInputs(*message);
+            auto trainingInputs = serializer.getTrainingInputs(message);
             openzl::training::MultiInput multi;
             for (auto& input : trainingInputs) {
                 multi.add(std::move(input));

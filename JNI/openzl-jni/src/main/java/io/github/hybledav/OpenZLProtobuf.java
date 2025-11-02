@@ -2,11 +2,13 @@ package io.github.hybledav;
 
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
+import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Bridging helpers for OpenZL's Protobuf support. The native implementation mirrors the
@@ -16,6 +18,8 @@ import java.util.Set;
  */
 public final class OpenZLProtobuf {
     private OpenZLProtobuf() {}
+
+    private static final Set<String> REGISTERED_FILE_NAMES = ConcurrentHashMap.newKeySet();
 
     public enum Protocol {
         PROTO(0),
@@ -180,14 +184,36 @@ public final class OpenZLProtobuf {
 
     public static void registerSchema(Descriptors.FileDescriptor fileDescriptor) {
         Objects.requireNonNull(fileDescriptor, "fileDescriptor");
+        Set<String> fileNames = new HashSet<>();
+        collectFileNames(fileDescriptor, fileNames);
+        if (fileNames.isEmpty()) {
+            return;
+        }
+        synchronized (REGISTERED_FILE_NAMES) {
+            if (REGISTERED_FILE_NAMES.containsAll(fileNames)) {
+                return;
+            }
+        }
         DescriptorProtos.FileDescriptorSet descriptorSet = buildDescriptorSet(fileDescriptor);
-        registerSchema(descriptorSet.toByteArray());
+        registerSchemaInternal(descriptorSet, fileNames);
     }
 
     public static void registerSchema(byte[] descriptorSet) {
         Objects.requireNonNull(descriptorSet, "descriptorSet");
-        OpenZLNative.load();
-        registerSchemaNative(descriptorSet);
+        DescriptorProtos.FileDescriptorSet set;
+        try {
+            set = DescriptorProtos.FileDescriptorSet.parseFrom(descriptorSet);
+        } catch (InvalidProtocolBufferException e) {
+            throw new IllegalArgumentException("Invalid descriptor set", e);
+        }
+        if (set.getFileCount() == 0) {
+            return;
+        }
+        Set<String> fileNames = new HashSet<>();
+        for (DescriptorProtos.FileDescriptorProto file : set.getFileList()) {
+            fileNames.add(file.getName());
+        }
+        registerSchemaInternal(set, fileNames);
     }
 
     private static DescriptorProtos.FileDescriptorSet buildDescriptorSet(
@@ -211,6 +237,34 @@ public final class OpenZLProtobuf {
         builder.addFile(file.toProto());
         for (Descriptors.FileDescriptor dependency : file.getDependencies()) {
             collectFileDescriptors(dependency, builder, seen);
+        }
+    }
+
+    private static void collectFileNames(Descriptors.FileDescriptor file, Set<String> sink) {
+        if (file == null) {
+            return;
+        }
+        if (!sink.add(file.getName())) {
+            return;
+        }
+        for (Descriptors.FileDescriptor dependency : file.getDependencies()) {
+            collectFileNames(dependency, sink);
+        }
+    }
+
+    private static void registerSchemaInternal(
+            DescriptorProtos.FileDescriptorSet descriptorSet,
+            Set<String> fileNames) {
+        if (descriptorSet == null || descriptorSet.getFileCount() == 0 || fileNames.isEmpty()) {
+            return;
+        }
+        synchronized (REGISTERED_FILE_NAMES) {
+            if (REGISTERED_FILE_NAMES.containsAll(fileNames)) {
+                return;
+            }
+            OpenZLNative.load();
+            registerSchemaNative(descriptorSet.toByteArray());
+            REGISTERED_FILE_NAMES.addAll(fileNames);
         }
     }
 
