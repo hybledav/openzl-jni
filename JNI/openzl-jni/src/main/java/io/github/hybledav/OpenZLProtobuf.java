@@ -5,6 +5,7 @@ import com.google.protobuf.Descriptors;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -85,6 +86,89 @@ public final class OpenZLProtobuf {
             Protocol outputProtocol,
             Descriptors.Descriptor descriptor) {
         return convert(payload, inputProtocol, outputProtocol, null, descriptor);
+    }
+
+    /**
+     * Overrides the minimum number of protobuf samples collected before training a compressor for
+     * the supplied descriptor. Values &lt;= 0 leave the default behaviour unchanged.
+     */
+    public static void configureTraining(Descriptors.Descriptor descriptor, int minSamples) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        if (minSamples <= 0) {
+            return;
+        }
+        registerSchema(descriptor.getFile());
+        configureTraining(descriptor.getFullName(), minSamples);
+    }
+
+    /**
+     * Overrides the minimum number of protobuf samples collected before training a compressor for
+     * the supplied message type. Values &lt;= 0 leave the default behaviour unchanged.
+     */
+    public static void configureTraining(String messageType, int minSamples) {
+        Objects.requireNonNull(messageType, "messageType");
+        if (minSamples <= 0) {
+            return;
+        }
+        OpenZLNative.load();
+        configureTrainingNative(messageType, minSamples);
+    }
+
+    /**
+     * Converts a sub-range of the payload, avoiding an intermediate array copy when the caller can
+     * expose the backing buffer directly.
+     */
+    public static byte[] convert(byte[] payload,
+            int offset,
+            int length,
+            Protocol inputProtocol,
+            Protocol outputProtocol,
+            Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(payload, "payload");
+        Objects.requireNonNull(inputProtocol, "inputProtocol");
+        Objects.requireNonNull(outputProtocol, "outputProtocol");
+        Objects.requireNonNull(descriptor, "descriptor");
+        if (offset < 0 || length < 0 || offset + length > payload.length) {
+            throw new IndexOutOfBoundsException(
+                    "Invalid offset/length: offset=" + offset + ", length=" + length
+                            + ", payloadLength=" + payload.length);
+        }
+        registerSchema(descriptor.getFile());
+        return convertSliceNative(payload,
+                offset,
+                length,
+                inputProtocol.id(),
+                outputProtocol.id(),
+                null,
+                descriptor.getFullName());
+    }
+
+    /**
+     * Converts a direct {@link ByteBuffer}-backed protobuf payload without copying into a
+     * temporary Java array. The buffer must remain valid until the conversion completes.
+     */
+    public static byte[] convert(ByteBuffer payload,
+            int length,
+            Protocol inputProtocol,
+            Protocol outputProtocol,
+            Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(payload, "payload");
+        Objects.requireNonNull(inputProtocol, "inputProtocol");
+        Objects.requireNonNull(outputProtocol, "outputProtocol");
+        Objects.requireNonNull(descriptor, "descriptor");
+        if (!payload.isDirect()) {
+            throw new IllegalArgumentException("payload must be a direct ByteBuffer");
+        }
+        if (length < 0 || length > payload.capacity()) {
+            throw new IllegalArgumentException("length out of bounds: " + length);
+        }
+        registerSchema(descriptor.getFile());
+        return convertDirectNative(payload,
+                length,
+                inputProtocol.id(),
+                outputProtocol.id(),
+                null,
+                descriptor.getFullName());
     }
 
     /**
@@ -273,6 +357,20 @@ public final class OpenZLProtobuf {
             int outputProtocol,
             byte[] compressor,
             String messageType);
+    private static native byte[] convertSliceNative(byte[] payload,
+            int offset,
+            int length,
+            int inputProtocol,
+            int outputProtocol,
+            byte[] compressor,
+            String messageType);
+
+    private static native byte[] convertDirectNative(ByteBuffer payload,
+            int length,
+            int inputProtocol,
+            int outputProtocol,
+            byte[] compressor,
+            String messageType);
 
     private static native byte[][] trainNative(byte[][] samples,
             int inputProtocol,
@@ -281,6 +379,8 @@ public final class OpenZLProtobuf {
             int numSamples,
             boolean pareto,
             String messageType);
+
+    private static native void configureTrainingNative(String messageType, int minSamples);
 
     private static native void registerSchemaNative(byte[] descriptorSet);
 }

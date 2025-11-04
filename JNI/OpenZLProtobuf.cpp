@@ -168,6 +168,69 @@ void configureSerializer(openzl::protobuf::ProtoSerializer& serializer)
     }
 }
 
+constexpr size_t kMinTrainingSamples          = 4;
+constexpr size_t kMaxTrainingSamples          = 24;
+constexpr size_t kMinTrainingSampleBytes      = 1 << 10;   // 1 KiB
+constexpr size_t kTargetTrainingCorpusBytes   = 1 << 16;   // 64 KiB
+
+struct SerializerCacheEntry {
+    openzl::protobuf::ProtoSerializer serializer;
+    size_t appliedGeneration = 0;
+
+    SerializerCacheEntry()
+    {
+        configureSerializer(serializer);
+    }
+};
+
+class CompressorTrainingRegistry {
+public:
+    struct State {
+        std::mutex mutex;
+        bool trainingComplete        = false;
+        bool trainingInProgress      = false;
+        size_t generation            = 0;
+        size_t totalBytes            = 0;
+        std::vector<std::string> samples;
+        std::string serialized;
+        size_t minSamples             = kMinTrainingSamples;
+        size_t targetBytes            = kTargetTrainingCorpusBytes;
+    };
+
+    static CompressorTrainingRegistry& instance()
+    {
+        static CompressorTrainingRegistry registry;
+        return registry;
+    }
+
+    State& state(const std::string& type)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto& entry = states_[type];
+        if (!entry) {
+            entry = std::make_unique<State>();
+        }
+        return *entry;
+    }
+
+private:
+    CompressorTrainingRegistry() = default;
+
+    std::mutex mutex_;
+    std::unordered_map<std::string, std::unique_ptr<State>> states_;
+};
+
+SerializerCacheEntry& serializerEntryForType(const std::string& type);
+void applyTrainedCompressor(
+        const std::string& typeName,
+        SerializerCacheEntry& entry);
+void maybeAugmentTraining(
+        const std::string& typeName,
+        Protocol inputProtocol,
+        const void* payloadPtr,
+        size_t payloadLength,
+        SerializerCacheEntry& entry);
+
 class DescriptorRegistry {
 public:
     static DescriptorRegistry& instance()
@@ -281,16 +344,68 @@ google::protobuf::Message& reusableMessage(const std::string& type)
     return *message;
 }
 
+std::string trainCompressorFromSamples(
+        const std::string& typeName,
+        const std::vector<std::string>& samples,
+        size_t minSamples)
+{
+    if (samples.size() < minSamples) {
+        return {};
+    }
+
+    openzl::protobuf::ProtoSerializer serializer;
+    configureSerializer(serializer);
+    std::unique_ptr<google::protobuf::Message> prototype = makeMessage(typeName);
+    if (!prototype) {
+        return {};
+    }
+
+    std::vector<openzl::training::MultiInput> multiInputs;
+    multiInputs.reserve(samples.size());
+
+    for (const std::string& sample : samples) {
+        if (!prototype->ParseFromString(sample)) {
+            continue;
+        }
+        auto inputs = serializer.getTrainingInputs(*prototype);
+        openzl::training::MultiInput multi;
+        for (auto& input : inputs) {
+            multi.add(std::move(input));
+        }
+        multiInputs.emplace_back(std::move(multi));
+    }
+
+    if (multiInputs.empty()) {
+        return {};
+    }
+
+    openzl::training::TrainParams params;
+    params.numSamples      = multiInputs.size();
+    params.paretoFrontier  = false;
+
+    auto trained = openzl::training::train(
+            multiInputs,
+            *serializer.getCompressor(),
+            params);
+    if (trained.empty()) {
+        return {};
+    }
+    const std::string_view& serialized = *trained.front();
+    return std::string(serialized.data(), serialized.size());
+}
+
+SerializerCacheEntry& serializerEntryForType(const std::string& type)
+{
+    thread_local std::unordered_map<std::string, SerializerCacheEntry> cache;
+    auto [it, inserted] = cache.try_emplace(type);
+    (void)inserted;
+    applyTrainedCompressor(type, it->second);
+    return it->second;
+}
+
 openzl::protobuf::ProtoSerializer& serializerForType(const std::string& type)
 {
-    thread_local std::unordered_map<std::string, std::unique_ptr<openzl::protobuf::ProtoSerializer>> cache;
-    auto it = cache.find(type);
-    if (it == cache.end()) {
-        auto serializer = std::make_unique<openzl::protobuf::ProtoSerializer>();
-        configureSerializer(*serializer);
-        it = cache.emplace(type, std::move(serializer)).first;
-    }
-    return *it->second;
+    return serializerEntryForType(type).serializer;
 }
 
 openzl::protobuf::ProtoDeserializer& deserializerForType(const std::string& type)
@@ -301,6 +416,118 @@ openzl::protobuf::ProtoDeserializer& deserializerForType(const std::string& type
         it = cache.emplace(type, std::make_unique<openzl::protobuf::ProtoDeserializer>()).first;
     }
     return *it->second;
+}
+
+void applyTrainedCompressor(
+        const std::string& typeName,
+        SerializerCacheEntry& entry)
+{
+    auto& registryState = CompressorTrainingRegistry::instance().state(typeName);
+    std::string serialized;
+    size_t generation = 0;
+    {
+        std::lock_guard<std::mutex> lock(registryState.mutex);
+        if (!registryState.trainingComplete) {
+            return;
+        }
+        if (registryState.serialized.empty()) {
+            return;
+        }
+        if (registryState.generation <= entry.appliedGeneration) {
+            return;
+        }
+        serialized = registryState.serialized;
+        generation = registryState.generation;
+    }
+
+    try {
+        openzl::Compressor trained;
+        trained.deserialize(serialized);
+        entry.serializer.setCompressor(std::move(trained));
+        configureSerializer(entry.serializer);
+        entry.appliedGeneration = generation;
+    } catch (...) {
+        // Ignore failures when applying trained state; we will keep the existing compressor.
+    }
+}
+
+void maybeAugmentTraining(
+        const std::string& typeName,
+        Protocol inputProtocol,
+        const void* payloadPtr,
+        size_t payloadLength,
+        SerializerCacheEntry& entry)
+{
+    if (inputProtocol != Protocol::Proto) {
+        return;
+    }
+    if (payloadPtr == nullptr || payloadLength < kMinTrainingSampleBytes) {
+        return;
+    }
+
+    auto& registryState = CompressorTrainingRegistry::instance().state(typeName);
+    std::vector<std::string> samplesToTrain;
+    size_t minSamplesForTraining = kMinTrainingSamples;
+    bool shouldApplyExisting = false;
+    {
+        std::lock_guard<std::mutex> lock(registryState.mutex);
+        minSamplesForTraining = registryState.minSamples;
+        if (registryState.trainingComplete) {
+            shouldApplyExisting =
+                    !registryState.serialized.empty()
+                    && registryState.generation > entry.appliedGeneration;
+        } else if (!registryState.trainingInProgress) {
+            if (registryState.samples.size() < kMaxTrainingSamples) {
+                registryState.samples.emplace_back(
+                        static_cast<const char*>(payloadPtr),
+                        payloadLength);
+                registryState.totalBytes += payloadLength;
+            }
+            bool thresholdReached = registryState.samples.size() >= registryState.minSamples
+                    || registryState.totalBytes >= registryState.targetBytes;
+            if (thresholdReached && !registryState.samples.empty()) {
+                registryState.trainingInProgress = true;
+                samplesToTrain = std::move(registryState.samples);
+                registryState.samples.clear();
+                registryState.totalBytes = 0;
+            }
+        }
+    }
+
+    if (shouldApplyExisting) {
+        applyTrainedCompressor(typeName, entry);
+        return;
+    }
+
+    if (samplesToTrain.empty()) {
+        return;
+    }
+
+    std::string serialized;
+    try {
+        serialized = trainCompressorFromSamples(typeName, samplesToTrain, minSamplesForTraining);
+    } catch (...) {
+        serialized.clear();
+    }
+
+    bool publish = false;
+    {
+        std::lock_guard<std::mutex> lock(registryState.mutex);
+        registryState.trainingInProgress = false;
+        if (!serialized.empty()) {
+            registryState.serialized       = serialized;
+            registryState.trainingComplete = true;
+            ++registryState.generation;
+            publish = true;
+        } else {
+            // Training failed: keep gathering more samples.
+            registryState.trainingComplete = false;
+        }
+    }
+
+    if (publish) {
+        applyTrainedCompressor(typeName, entry);
+    }
 }
 
 jbyteArray convertPayload(JNIEnv* env,
@@ -314,6 +541,7 @@ jbyteArray convertPayload(JNIEnv* env,
     try {
         openzl::protobuf::ProtoSerializer localSerializer;
         openzl::protobuf::ProtoSerializer* serializerPtr = nullptr;
+        SerializerCacheEntry* serializerEntry = nullptr;
         if (compressorBytes != nullptr) {
             std::string serialized = copyArray(env, compressorBytes);
             if (env->ExceptionCheck()) {
@@ -325,7 +553,8 @@ jbyteArray convertPayload(JNIEnv* env,
             configureSerializer(localSerializer);
             serializerPtr = &localSerializer;
         } else {
-            serializerPtr = &serializerForType(typeName);
+            serializerEntry = &serializerEntryForType(typeName);
+            serializerPtr = &serializerEntry->serializer;
         }
 
         openzl::protobuf::ProtoDeserializer& deserializer =
@@ -344,6 +573,17 @@ jbyteArray convertPayload(JNIEnv* env,
             if (env->ExceptionCheck()) {
                 return nullptr;
             }
+        }
+
+        if (serializerEntry != nullptr) {
+            maybeAugmentTraining(
+                    typeName,
+                    inProto,
+                    payloadPtr,
+                    payloadLength,
+                    *serializerEntry);
+            // Training may have swapped the compressor; refresh pointer for clarity.
+            serializerPtr = &serializerEntry->serializer;
         }
 
         std::string result = serialiseMessage(env, outProto, message, *serializerPtr);
@@ -409,6 +649,27 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     }
 }
 
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_configureTrainingNative(
+        JNIEnv* env,
+        jclass,
+        jstring messageType,
+        jint minSamples)
+{
+    if (minSamples <= 0) {
+        return;
+    }
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return;
+    }
+    auto& state = CompressorTrainingRegistry::instance().state(typeName);
+    std::lock_guard<std::mutex> lock(state.mutex);
+    state.minSamples = static_cast<size_t>(minSamples);
+    if (state.minSamples == 0) {
+        state.minSamples = 1;
+    }
+}
+
 extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectNative(
         JNIEnv* env,
         jclass,
@@ -455,11 +716,9 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     }
 
     try {
-        thread_local openzl::protobuf::ProtoSerializer threadSerializer;
-        thread_local openzl::protobuf::ProtoDeserializer threadDeserializer;
-
         openzl::protobuf::ProtoSerializer localSerializer;
-        openzl::protobuf::ProtoSerializer* serializerPtr = &threadSerializer;
+        openzl::protobuf::ProtoSerializer* serializerPtr = nullptr;
+        SerializerCacheEntry* serializerEntry = nullptr;
         if (compressorBytes != nullptr) {
             std::string serialized = copyArray(env, compressorBytes);
             if (env->ExceptionCheck()) {
@@ -469,15 +728,27 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
             trained.deserialize(serialized);
             localSerializer.setCompressor(std::move(trained));
             serializerPtr = &localSerializer;
+            configureSerializer(localSerializer);
+        } else {
+            serializerEntry = &serializerEntryForType(typeName);
+            serializerPtr = &serializerEntry->serializer;
         }
-
-        configureSerializer(*serializerPtr);
 
         google::protobuf::Message& message = reusableMessage(typeName);
         message.Clear();
         if (length > 0 && !message.ParseFromArray(payloadPtr, static_cast<int>(length))) {
             throwIllegalArgument(env, "Failed to parse protobuf payload");
             return nullptr;
+        }
+
+        if (serializerEntry != nullptr) {
+            maybeAugmentTraining(
+                    typeName,
+                    inProto,
+                    payloadPtr,
+                    static_cast<size_t>(length),
+                    *serializerEntry);
+            serializerPtr = &serializerEntry->serializer;
         }
 
         std::string result = serialiseMessage(env, outProto, message, *serializerPtr);
