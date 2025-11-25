@@ -53,6 +53,11 @@ class OpenZLTrainingE2ETest {
             bestSize = Math.min(bestSize, encoded.length);
         }
 
+        System.out.printf(
+                "telemetry baseline=%d bytes, best trained=%d bytes%n",
+                baseline.length,
+                bestSize);
+
         // Trained compressors should beat or match the stock serializer; we expect a visible drop.
         assertTrue(bestSize < baseline.length, "trained compressor should reduce payload size");
     }
