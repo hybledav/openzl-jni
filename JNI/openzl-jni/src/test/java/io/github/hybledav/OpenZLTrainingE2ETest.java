@@ -96,11 +96,11 @@ class OpenZLTrainingE2ETest {
         DynamicMessage.Builder builder = DynamicMessage.newBuilder(descriptor);
         builder.setField(sensorId, "sensor-" + (variant % 3));
         // Create a predictable, compressible waveform: long plateaus with occasional spikes.
-        // 2K readings gives ~8 KiB payloads so training works on kilobyte-sized samples.
-        for (int i = 0; i < 2048; i++) {
-            int value = (i / 64) * (variant % 5 + 1);
-            if ((i + variant) % 97 == 0) {
-                value = 2048 + variant; // sparse outlier to keep entropy modest
+        // 16K readings pushes the baseline encoded payload into low-KiB territory.
+        for (int i = 0; i < 16_384; i++) {
+            int value = (i / 96) * (variant % 5 + 1);
+            if ((i + variant) % 211 == 0) {
+                value = 4096 + variant; // sparse outlier to keep entropy modest
             }
             builder.addRepeatedField(readings, value);
         }
