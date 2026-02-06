@@ -17,6 +17,7 @@
 #include "google/protobuf/util/json_util.h"
 #include "openzl/cpp/CParam.hpp"
 #include "openzl/shared/string_view.h"
+#include "openzl/zl_reflection.h"
 #include "tools/protobuf/ProtoDeserializer.h"
 #include "tools/protobuf/ProtoGraph.h"
 #include "tools/protobuf/ProtoSerializer.h"
@@ -970,5 +971,197 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_registe
         DescriptorRegistry::instance().registerDescriptorSet(set);
     } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL Java_io_github_hybledav_OpenZLProtobuf_graphJsonNative(
+        JNIEnv* env,
+        jclass,
+        jstring messageType)
+{
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+    try {
+        SerializerCacheEntry& entry = serializerEntryForType(typeName);
+        openzl::Compressor* compressor = entry.serializer.getCompressor();
+        if (compressor == nullptr) {
+            throwIllegalState(env, "No compressor available for graph export");
+            return nullptr;
+        }
+        std::string json = compressor->serializeToJson();
+        return env->NewStringUTF(json.c_str());
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jstring JNICALL Java_io_github_hybledav_OpenZLProtobuf_graphJsonFromCompressorNative(
+        JNIEnv* env,
+        jclass,
+        jbyteArray compressorBytes)
+{
+    if (compressorBytes == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "compressorBytes");
+        return nullptr;
+    }
+    try {
+        std::string serialized = copyArray(env, compressorBytes);
+        if (env->ExceptionCheck()) {
+            return nullptr;
+        }
+        openzl::Compressor trained;
+        trained.deserialize(serialized);
+        std::string json = trained.serializeToJson();
+        return env->NewStringUTF(json.c_str());
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
+
+namespace {
+const char* graphTypeName(ZL_GraphType type)
+{
+    switch (type) {
+    case ZL_GraphType_standard:
+        return "standard";
+    case ZL_GraphType_static:
+        return "static";
+    case ZL_GraphType_selector:
+        return "selector";
+    case ZL_GraphType_function:
+        return "function";
+    case ZL_GraphType_multiInput:
+        return "multi_input";
+    case ZL_GraphType_parameterized:
+        return "parameterized";
+    case ZL_GraphType_segmenter:
+        return "segmenter";
+    default:
+        return "unknown";
+    }
+}
+
+std::string graphNameOrId(const ZL_Compressor* compressor, ZL_GraphID graph)
+{
+    const char* name = ZL_Compressor_Graph_getName(compressor, graph);
+    if (name != nullptr && name[0] != '\0') {
+        return std::string(name);
+    }
+    return std::to_string(static_cast<uint64_t>(graph.gid));
+}
+} // namespace
+
+extern "C" JNIEXPORT jstring JNICALL Java_io_github_hybledav_OpenZLProtobuf_graphDetailJsonNative(
+        JNIEnv* env,
+        jclass,
+        jstring messageType)
+{
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+    try {
+        SerializerCacheEntry& entry = serializerEntryForType(typeName);
+        openzl::Compressor* compressor = entry.serializer.getCompressor();
+        if (compressor == nullptr) {
+            throwIllegalState(env, "No compressor available for graph detail export");
+            return nullptr;
+        }
+
+        ZL_GraphID start{};
+        bool hasStart = ZL_Compressor_getStartingGraphID(compressor->get(), &start);
+        if (!hasStart) {
+            throwIllegalState(env, "Starting graph not available");
+            return nullptr;
+        }
+
+        std::unordered_set<uint64_t> visited;
+        std::vector<ZL_GraphID> queue;
+        queue.push_back(start);
+        visited.insert(static_cast<uint64_t>(start.gid));
+
+        std::ostringstream out;
+        out << "{\n";
+        out << "  \"start\": \"" << graphNameOrId(compressor->get(), start) << "\",\n";
+        out << "  \"graphs\": [\n";
+
+        bool firstGraph = true;
+        for (size_t idx = 0; idx < queue.size(); ++idx) {
+            ZL_GraphID gid = queue[idx];
+            ZL_GraphType type = ZL_Compressor_getGraphType(compressor->get(), gid);
+            ZL_GraphID base = ZL_Compressor_Graph_getBaseGraphID(compressor->get(), gid);
+            ZL_GraphIDList successors = ZL_Compressor_Graph_getSuccessors(compressor->get(), gid);
+            ZL_GraphIDList customGraphs = ZL_Compressor_Graph_getCustomGraphs(compressor->get(), gid);
+            ZL_NodeIDList customNodes = ZL_Compressor_Graph_getCustomNodes(compressor->get(), gid);
+
+            for (size_t s = 0; s < successors.nbGraphIDs; ++s) {
+                uint64_t succId = static_cast<uint64_t>(successors.graphids[s].gid);
+                if (visited.insert(succId).second) {
+                    queue.push_back(successors.graphids[s]);
+                }
+            }
+            for (size_t s = 0; s < customGraphs.nbGraphIDs; ++s) {
+                uint64_t cid = static_cast<uint64_t>(customGraphs.graphids[s].gid);
+                if (visited.insert(cid).second) {
+                    queue.push_back(customGraphs.graphids[s]);
+                }
+            }
+
+            if (!firstGraph) {
+                out << ",\n";
+            }
+            firstGraph = false;
+
+            out << "    {\n";
+            out << "      \"id\": \"" << graphNameOrId(compressor->get(), gid) << "\",\n";
+            out << "      \"type\": \"" << graphTypeName(type) << "\",\n";
+            if (base.gid != 0) {
+                out << "      \"base\": \"" << graphNameOrId(compressor->get(), base) << "\",\n";
+            }
+            out << "      \"successors\": [";
+            for (size_t s = 0; s < successors.nbGraphIDs; ++s) {
+                if (s > 0) {
+                    out << ", ";
+                }
+                out << "\"" << graphNameOrId(compressor->get(), successors.graphids[s]) << "\"";
+            }
+            out << "],\n";
+
+            out << "      \"customGraphs\": [";
+            for (size_t s = 0; s < customGraphs.nbGraphIDs; ++s) {
+                if (s > 0) {
+                    out << ", ";
+                }
+                out << "\"" << graphNameOrId(compressor->get(), customGraphs.graphids[s]) << "\"";
+            }
+            out << "],\n";
+
+            out << "      \"customNodes\": [";
+            for (size_t n = 0; n < customNodes.nbNodeIDs; ++n) {
+                if (n > 0) {
+                    out << ", ";
+                }
+                const char* nodeName = ZL_Compressor_Node_getName(compressor->get(), customNodes.nodeids[n]);
+                if (nodeName == nullptr) {
+                    out << "\"\"";
+                } else {
+                    out << "\"" << nodeName << "\"";
+                }
+            }
+            out << "]\n";
+            out << "    }";
+        }
+        out << "\n  ]\n";
+        out << "}\n";
+
+        std::string json = out.str();
+        return env->NewStringUTF(json.c_str());
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
     }
 }

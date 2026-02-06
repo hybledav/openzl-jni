@@ -259,6 +259,64 @@ public final class OpenZLProtobuf {
     }
 
     /**
+     * Returns a JSON representation of the native compressor graph used for the
+     * provided protobuf message type.
+     */
+    public static String graphJson(String messageType) {
+        Objects.requireNonNull(messageType, "messageType");
+        OpenZLNative.load();
+        String json = graphJsonNative(messageType);
+        if (json == null) {
+            throw new IllegalStateException("Native protobuf graph export failed");
+        }
+        return json;
+    }
+
+    /**
+     * Returns a JSON representation of a trained compressor instance.
+     */
+    public static String graphJsonFromCompressor(byte[] compressorBytes) {
+        Objects.requireNonNull(compressorBytes, "compressorBytes");
+        OpenZLNative.load();
+        String json = graphJsonFromCompressorNative(compressorBytes);
+        if (json == null) {
+            throw new IllegalStateException("Native compressor graph export failed");
+        }
+        return json;
+    }
+
+    /**
+     * Descriptor-backed graph export.
+     */
+    public static String graphJson(Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        registerSchema(descriptor.getFile());
+        return graphJson(descriptor.getFullName());
+    }
+
+    /**
+     * Returns a detailed JSON structure describing the native graph topology.
+     */
+    public static String graphDetailJson(String messageType) {
+        Objects.requireNonNull(messageType, "messageType");
+        OpenZLNative.load();
+        String json = graphDetailJsonNative(messageType);
+        if (json == null) {
+            throw new IllegalStateException("Native protobuf graph detail export failed");
+        }
+        return json;
+    }
+
+    /**
+     * Descriptor-backed graph detail export.
+     */
+    public static String graphDetailJson(Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        registerSchema(descriptor.getFile());
+        return graphDetailJson(descriptor.getFullName());
+    }
+
+    /**
      * Registers all descriptors reachable from the supplied descriptor.
      */
     public static void registerSchema(Descriptors.Descriptor descriptor) {
@@ -383,4 +441,9 @@ public final class OpenZLProtobuf {
     private static native void configureTrainingNative(String messageType, int minSamples);
 
     private static native void registerSchemaNative(byte[] descriptorSet);
+
+    private static native String graphJsonNative(String messageType);
+    private static native String graphJsonFromCompressorNative(byte[] compressorBytes);
+
+    private static native String graphDetailJsonNative(String messageType);
 }

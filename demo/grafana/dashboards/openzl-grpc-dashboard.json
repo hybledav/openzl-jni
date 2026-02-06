@@ -1,0 +1,396 @@
+{
+  "uid": "openzl-grpc",
+  "title": "OpenZL gRPC Metrics",
+  "schemaVersion": 38,
+  "version": 11,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "message",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(openzl_grpc_encode_seconds_count{message!~\".*Ack.*\"}, message)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ".*"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Encode Latency (ms)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_encode_seconds_max{message=~\"$message\"} * 1000",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Decode Latency (ms)",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_decode_seconds_max{message=~\"$message\"} * 1000",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Encode Throughput (ops/s)",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(openzl_grpc_encode_seconds_count{message=~\"$message\"}[5m])",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Decode Throughput (ops/s)",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(openzl_grpc_decode_seconds_count{message=~\"$message\"}[5m])",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Training Duration (total ms)",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_training_seconds_sum{message=~\"$message\"} * 1000",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Compression Ratio (trained, last sample)",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_compression_ratio_last{message=~\"$message\",trained=\"true\",fallback=\"false\"}",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Training Runs (count)",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_training_seconds_count{message=~\"$message\"}",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Training Samples (taken vs retained)",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_training_samples_total{message=~\"$message\"}",
+          "legendFormat": "{{message}} total"
+        },
+        {
+          "expr": "openzl_grpc_training_samples_retained{message=~\"$message\"}",
+          "legendFormat": "{{message}} retained"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Compressor Switches (total)",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_training_switches_total{message=~\"$message\"}",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Failures (total)",
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_failures_total{message=~\"$message\"}",
+          "legendFormat": "{{message}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "OpenZL Graph JSON (Full)",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_graph_json{message=~\"$message\"}",
+          "legendFormat": "{{message}} {{graph}}",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "valueLabel": "value"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "value": true
+            },
+            "indexByName": {
+              "message": 0,
+              "graph": 1,
+              "version": 2,
+              "json": 3
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "json"
+            },
+            "properties": [
+              {
+                "id": "custom.displayMode",
+                "value": "json-view"
+              },
+              {
+                "id": "custom.width",
+                "value": 900
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "lg",
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "message"
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "OpenZL Graph Diff",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "expr": "openzl_grpc_graph_diff{message=~\"$message\"}",
+          "legendFormat": "{{message}} {{graph}}",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "valueLabel": "value"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "value": true
+            },
+            "indexByName": {
+              "message": 0,
+              "graph": 1,
+              "prev_version": 2,
+              "version": 3,
+              "diff": 4
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "diff"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 900
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "lg",
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "message"
+          }
+        ]
+      }
+    }
+  ]
+}

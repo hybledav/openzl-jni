@@ -15,6 +15,12 @@ JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_configureTrainingN
         jstring, jint);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_registerSchemaNative(JNIEnv*, jclass,
         jbyteArray);
+JNIEXPORT jstring JNICALL Java_io_github_hybledav_OpenZLProtobuf_graphJsonNative(JNIEnv*, jclass,
+                                                                               jstring);
+JNIEXPORT jstring JNICALL Java_io_github_hybledav_OpenZLProtobuf_graphJsonFromCompressorNative(JNIEnv*, jclass,
+                                                                                               jbyteArray);
+JNIEXPORT jstring JNICALL Java_io_github_hybledav_OpenZLProtobuf_graphDetailJsonNative(JNIEnv*, jclass,
+                                                                                     jstring);
 
 #ifdef __cplusplus
 }
