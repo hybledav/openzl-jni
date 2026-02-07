@@ -152,6 +152,18 @@ public final class OpenZLProtobuf {
             Protocol inputProtocol,
             Protocol outputProtocol,
             Descriptors.Descriptor descriptor) {
+        return convert(payload, length, inputProtocol, outputProtocol, null, descriptor);
+    }
+
+    /**
+     * Converts a direct {@link ByteBuffer}-backed payload with an optional compressor.
+     */
+    public static byte[] convert(ByteBuffer payload,
+            int length,
+            Protocol inputProtocol,
+            Protocol outputProtocol,
+            byte[] compressor,
+            Descriptors.Descriptor descriptor) {
         Objects.requireNonNull(payload, "payload");
         Objects.requireNonNull(inputProtocol, "inputProtocol");
         Objects.requireNonNull(outputProtocol, "outputProtocol");
@@ -167,7 +179,7 @@ public final class OpenZLProtobuf {
                 length,
                 inputProtocol.id(),
                 outputProtocol.id(),
-                null,
+                compressor,
                 descriptor.getFullName());
     }
 
@@ -269,7 +281,7 @@ public final class OpenZLProtobuf {
         if (json == null) {
             throw new IllegalStateException("Native protobuf graph export failed");
         }
-        return json;
+        return sanitizeGraphJson(json);
     }
 
     /**
@@ -282,7 +294,7 @@ public final class OpenZLProtobuf {
         if (json == null) {
             throw new IllegalStateException("Native compressor graph export failed");
         }
-        return json;
+        return sanitizeGraphJson(json);
     }
 
     /**
@@ -304,7 +316,7 @@ public final class OpenZLProtobuf {
         if (json == null) {
             throw new IllegalStateException("Native protobuf graph detail export failed");
         }
-        return json;
+        return sanitizeGraphJson(json);
     }
 
     /**
@@ -314,6 +326,75 @@ public final class OpenZLProtobuf {
         Objects.requireNonNull(descriptor, "descriptor");
         registerSchema(descriptor.getFile());
         return graphDetailJson(descriptor.getFullName());
+    }
+
+    private static String sanitizeGraphJson(String json) {
+        if (json == null || json.isBlank()) {
+            return json;
+        }
+        // OpenZL emits numeric object keys without quotes; make it valid JSON.
+        String normalized = json.replaceAll("(?m)^(\\s*)(-?\\d+)(\\s*:)", "$1\"$2\"$3");
+        normalized = normalized.replaceAll("([\\{,]\\s*)(-?\\d+)(\\s*:)", "$1\"$2\"$3");
+        return prettyPrintJson(normalized);
+    }
+
+    private static String prettyPrintJson(String json) {
+        StringBuilder out = new StringBuilder(json.length() + 128);
+        int indent = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (inString) {
+                out.append(c);
+                if (escape) {
+                    escape = false;
+                } else if (c == '\\') {
+                    escape = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            switch (c) {
+                case '"':
+                    inString = true;
+                    out.append(c);
+                    break;
+                case '{':
+                case '[':
+                    out.append(c).append('\n');
+                    indent++;
+                    appendIndent(out, indent);
+                    break;
+                case '}':
+                case ']':
+                    out.append('\n');
+                    indent = Math.max(0, indent - 1);
+                    appendIndent(out, indent);
+                    out.append(c);
+                    break;
+                case ',':
+                    out.append(c).append('\n');
+                    appendIndent(out, indent);
+                    break;
+                case ':':
+                    out.append(": ");
+                    break;
+                default:
+                    if (!Character.isWhitespace(c)) {
+                        out.append(c);
+                    }
+                    break;
+            }
+        }
+        return out.toString().trim();
+    }
+
+    private static void appendIndent(StringBuilder out, int indent) {
+        for (int i = 0; i < indent; i++) {
+            out.append("  ");
+        }
     }
 
     /**

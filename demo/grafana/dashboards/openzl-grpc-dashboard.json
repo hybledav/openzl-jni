@@ -2,7 +2,7 @@
   "uid": "openzl-grpc",
   "title": "OpenZL gRPC Metrics",
   "schemaVersion": 38,
-  "version": 11,
+  "version": 12,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
@@ -17,6 +17,51 @@
         "query": "label_values(openzl_grpc_encode_seconds_count{message!~\".*Ack.*\"}, message)",
         "refresh": 2,
         "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "graph",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(openzl_grpc_graph{message=~\"$message\"}, graph)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "version_from",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(openzl_grpc_graph_json{message=~\"$message\",graph=~\"$graph\"}, version)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "version_to",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(openzl_grpc_graph_json{message=~\"$message\",graph=~\"$graph\"}, version)",
+        "refresh": 2,
+        "multi": false,
         "includeAll": true,
         "allValue": ".*",
         "current": {
@@ -262,7 +307,7 @@
       },
       "targets": [
         {
-          "expr": "openzl_grpc_graph_json{message=~\"$message\"}",
+          "expr": "openzl_grpc_graph_json{message=~\"$message\",graph=~\"$graph\"}",
           "legendFormat": "{{message}} {{graph}}",
           "instant": true,
           "format": "table"
@@ -325,7 +370,7 @@
     },
     {
       "type": "table",
-      "title": "OpenZL Graph Diff",
+      "title": "OpenZL Graph Diff (Selected Versions)",
       "gridPos": {
         "x": 0,
         "y": 52,
@@ -334,7 +379,7 @@
       },
       "targets": [
         {
-          "expr": "openzl_grpc_graph_diff{message=~\"$message\"}",
+          "expr": "openzl_grpc_graph_diff{message=~\"$message\",graph=~\"$graph\",prev_version=~\"$version_from\",version=~\"$version_to\"}",
           "legendFormat": "{{message}} {{graph}}",
           "instant": true,
           "format": "table"

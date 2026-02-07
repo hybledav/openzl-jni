@@ -1,0 +1,81 @@
+{
+  "uid": "openzl-compressorinspection",
+  "title": "Compressor Inspection",
+  "schemaVersion": 39,
+  "version": 5,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "message",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(openzl_grpc_graph_json, message)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "graph",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(openzl_grpc_graph_json{message=~\"$message\"}, graph)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "version_from",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(openzl_grpc_graph_json{message=~\"$message\",graph=~\"$graph\"}, version)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "version_to",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(openzl_grpc_graph_json{message=~\"$message\",graph=~\"$graph\"}, version)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "Graph JSON (From)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 22
+      },
+      "options": {
+        "mode": "html",
+        "content": "<iframe src=\"http://localhost:18080/openzl/graph-json-decoded?message=$message&graph=$graph&version=$version_from\" style=\"width:100%;height:100%;border:0;font-family:monospace;\"></iframe>"
+      }
+    },
+    {
+      "type": "text",
+      "title": "Graph JSON (To)",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 22
+      },
+      "options": {
+        "mode": "html",
+        "content": "<iframe src=\"http://localhost:18080/openzl/graph-json-decoded?message=$message&graph=$graph&version=$version_to\" style=\"width:100%;height:100%;border:0;font-family:monospace;\"></iframe>"
+      }
+    }
+  ]
+}
