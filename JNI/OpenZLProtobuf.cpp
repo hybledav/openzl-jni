@@ -161,7 +161,7 @@ void configureSerializer(openzl::protobuf::ProtoSerializer& serializer)
 {
     try {
         if (auto* compressor = serializer.getCompressor()) {
-            compressor->setParameter(openzl::CParam::CompressionLevel, 0);
+            compressor->setParameter(openzl::CParam::CompressionLevel, 1);
             compressor->setParameter(openzl::CParam::MinStreamSize, 0);
         }
     } catch (...) {

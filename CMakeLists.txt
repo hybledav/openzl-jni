@@ -25,11 +25,6 @@ FetchContent_MakeAvailable(openzl)
 
 find_package(JNI REQUIRED)
 find_package(protobuf CONFIG REQUIRED)
-include(FindProtobuf)
-
-set(OPENZL_PROTOBUF_SCHEMA ${openzl_SOURCE_DIR}/tools/protobuf/schema.proto)
-protobuf_generate_cpp(OPENZL_JNI_PROTO_SRCS OPENZL_JNI_PROTO_HDRS ${OPENZL_PROTOBUF_SCHEMA})
-
 if(TARGET custom_parsers AND TARGET pytorch_model_parser)
     target_link_libraries(custom_parsers pytorch_model_parser)
 endif()
@@ -63,7 +58,6 @@ add_library(openzl_jni SHARED
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorMetadata.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorNumeric.cpp
     ${openzl_SOURCE_DIR}/cli/utils/compress_profiles.cpp
-    ${OPENZL_JNI_PROTO_SRCS}
 )
 set_target_properties(openzl_jni PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/cli"

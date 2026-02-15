@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdio>
 #include <limits>
+#include <mutex>
 #include <new>
 #include <stdexcept>
 #include <string>
@@ -15,6 +16,7 @@ CachedJNIRefs gJNIRefs;
 constexpr int MAX_GLOBAL_CACHE = 8;
 NativeState* globalCache[MAX_GLOBAL_CACHE];
 int globalCacheSize = 0;
+std::mutex globalCacheMutex;
 thread_local NativeState* tlsCachedState = nullptr;
 
 jclass makeGlobalClassRef(JNIEnv* env, const char* name)
@@ -199,8 +201,13 @@ NativeState* acquireState(ZL_GraphID graph)
         state->setGraph(graph);
         return state;
     }
-    if (globalCacheSize > 0) {
-        state = globalCache[--globalCacheSize];
+    {
+        std::lock_guard<std::mutex> lock(globalCacheMutex);
+        if (globalCacheSize > 0) {
+            state = globalCache[--globalCacheSize];
+        }
+    }
+    if (state != nullptr) {
         state->reset();
         state->setGraph(graph);
         return state;
@@ -217,10 +224,18 @@ void recycleState(NativeState* state)
     state->reset();
     if (tlsCachedState == nullptr) {
         tlsCachedState = state;
-    } else if (globalCacheSize < MAX_GLOBAL_CACHE) {
-        globalCache[globalCacheSize++] = state;
     } else {
-        delete state;
+        bool cached = false;
+        {
+            std::lock_guard<std::mutex> lock(globalCacheMutex);
+            if (globalCacheSize < MAX_GLOBAL_CACHE) {
+                globalCache[globalCacheSize++] = state;
+                cached = true;
+            }
+        }
+        if (!cached) {
+            delete state;
+        }
     }
 }
 

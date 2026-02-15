@@ -15,6 +15,7 @@ JNIEXPORT jstring JNICALL Java_io_github_hybledav_OpenZLCompressor_serializeToJs
 JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_maxCompressedSizeNative(JNIEnv*, jclass, jint);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_resetNative(JNIEnv*, jobject);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destroyCompressor(JNIEnv*, jobject);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_destroyCompressorHandleNative(JNIEnv*, jclass, jlong);
 JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compressIntoNative(JNIEnv*, jobject,
         jbyteArray, jint, jint, jbyteArray, jint, jint);
 JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressIntoNative(JNIEnv*, jobject,

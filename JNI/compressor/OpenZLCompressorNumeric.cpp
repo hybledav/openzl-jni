@@ -9,6 +9,31 @@
 
 namespace {
 
+struct JNICriticalArray {
+    JNIEnv* env;
+    jarray array;
+    void* ptr;
+
+    JNICriticalArray(JNIEnv* e, jarray a) : env(e), array(a) {
+        ptr = env->GetPrimitiveArrayCritical(array, nullptr);
+    }
+
+    ~JNICriticalArray() {
+        if (ptr != nullptr) {
+            env->ReleasePrimitiveArrayCritical(array, ptr, JNI_ABORT);
+        }
+    }
+
+    void* get() const { return ptr; }
+    void release() {
+        if (ptr != nullptr) {
+            env->ReleasePrimitiveArrayCritical(array, ptr, JNI_ABORT);
+            ptr = nullptr;
+        }
+    }
+    operator bool() const { return ptr != nullptr; }
+};
+
 jbyteArray compressNumericCommon(
         JNIEnv* env,
         NativeState* state,
@@ -156,14 +181,23 @@ extern "C" JNIEXPORT jintArray JNICALL Java_io_github_hybledav_OpenZLCompressor_
     if (elementCapacity == 0) {
         elementCapacity = 1;
     }
-    std::vector<jint> buffer(elementCapacity);
+    
     ZL_OutputInfo info{};
-    ZL_Report report = ZL_DCtx_decompressTyped(state->dctx,
-            &info,
-            buffer.data(),
-            buffer.size() * sizeof(jint),
-            srcPtr,
-            static_cast<size_t>(len));
+    ZL_Report report{};
+    std::vector<jint> buffer;
+    try {
+        buffer.resize(elementCapacity);
+        report = ZL_DCtx_decompressTyped(state->dctx,
+                &info,
+                buffer.data(),
+                buffer.size() * sizeof(jint),
+                srcPtr,
+                static_cast<size_t>(len));
+    } catch (const std::bad_alloc&) {
+        env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to allocate decompression buffer");
+        return nullptr;
+    }
     env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
     if (ZL_isError(report)) {
         return nullptr;
@@ -213,14 +247,23 @@ extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (elementCapacity == 0) {
         elementCapacity = 1;
     }
-    std::vector<jlong> buffer(elementCapacity);
+
     ZL_OutputInfo info{};
-    ZL_Report report = ZL_DCtx_decompressTyped(state->dctx,
-            &info,
-            buffer.data(),
-            buffer.size() * sizeof(jlong),
-            srcPtr,
-            static_cast<size_t>(len));
+    ZL_Report report{};
+    std::vector<jlong> buffer;
+    try {
+        buffer.resize(elementCapacity);
+        report = ZL_DCtx_decompressTyped(state->dctx,
+                &info,
+                buffer.data(),
+                buffer.size() * sizeof(jlong),
+                srcPtr,
+                static_cast<size_t>(len));
+    } catch (const std::bad_alloc&) {
+        env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to allocate decompression buffer");
+        return nullptr;
+    }
     env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
     if (ZL_isError(report)) {
         return nullptr;
@@ -270,14 +313,23 @@ extern "C" JNIEXPORT jfloatArray JNICALL Java_io_github_hybledav_OpenZLCompresso
     if (elementCapacity == 0) {
         elementCapacity = 1;
     }
-    std::vector<jfloat> buffer(elementCapacity);
+    
     ZL_OutputInfo info{};
-    ZL_Report report = ZL_DCtx_decompressTyped(state->dctx,
-            &info,
-            buffer.data(),
-            buffer.size() * sizeof(jfloat),
-            srcPtr,
-            static_cast<size_t>(len));
+    ZL_Report report{};
+    std::vector<jfloat> buffer;
+    try {
+        buffer.resize(elementCapacity);
+        report = ZL_DCtx_decompressTyped(state->dctx,
+                &info,
+                buffer.data(),
+                buffer.size() * sizeof(jfloat),
+                srcPtr,
+                static_cast<size_t>(len));
+    } catch (const std::bad_alloc&) {
+        env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to allocate decompression buffer");
+        return nullptr;
+    }
     env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
     if (ZL_isError(report)) {
         return nullptr;
@@ -327,14 +379,23 @@ extern "C" JNIEXPORT jdoubleArray JNICALL Java_io_github_hybledav_OpenZLCompress
     if (elementCapacity == 0) {
         elementCapacity = 1;
     }
-    std::vector<jdouble> buffer(elementCapacity);
+    
     ZL_OutputInfo info{};
-    ZL_Report report = ZL_DCtx_decompressTyped(state->dctx,
-            &info,
-            buffer.data(),
-            buffer.size() * sizeof(jdouble),
-            srcPtr,
-            static_cast<size_t>(len));
+    ZL_Report report{};
+    std::vector<jdouble> buffer;
+    try {
+        buffer.resize(elementCapacity);
+        report = ZL_DCtx_decompressTyped(state->dctx,
+                &info,
+                buffer.data(),
+                buffer.size() * sizeof(jdouble),
+                srcPtr,
+                static_cast<size_t>(len));
+    } catch (const std::bad_alloc&) {
+        env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
+        throwNew(env, JniRefs().outOfMemoryError, "Failed to allocate decompression buffer");
+        return nullptr;
+    }
     env->ReleasePrimitiveArrayCritical(src, srcPtr, JNI_ABORT);
     if (ZL_isError(report)) {
         return nullptr;

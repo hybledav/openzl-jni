@@ -97,7 +97,6 @@ public final class OpenZLBufferManager implements AutoCloseable {
 
     private final class PoolState {
         private final List<ArrayDeque<ByteBuffer>> buckets = new ArrayList<>();
-        private final ArrayDeque<ByteBuffer> inUse = new ArrayDeque<>();
 
         private PoolState() {
             // Pre-create a few buckets for common sizes. We use powers of two starting from
@@ -120,18 +119,17 @@ public final class OpenZLBufferManager implements AutoCloseable {
             if (buffer == null) {
                 buffer = allocateDirect(capacity);
             }
-            inUse.addLast(buffer);
             buffer.clear();
             return buffer;
         }
 
         void release(ByteBuffer buffer) {
-            if (buffer == null) {
+            if (buffer == null || !buffer.isDirect()) {
                 return;
             }
-            if (inUse.removeLastOccurrence(buffer)) {
-                buffer.clear();
-                int bucketIndex = bucketIndex(buffer.capacity());
+            buffer.clear();
+            int bucketIndex = bucketIndex(buffer.capacity());
+            if (bucketIndex < buckets.size()) {
                 buckets.get(bucketIndex).addLast(buffer);
             }
         }
@@ -140,7 +138,6 @@ public final class OpenZLBufferManager implements AutoCloseable {
             for (ArrayDeque<ByteBuffer> bucket : buckets) {
                 bucket.clear();
             }
-            inUse.clear();
         }
 
         private ByteBuffer pollFromBucket(int bucketIndex, int capacity) {

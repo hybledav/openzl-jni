@@ -113,7 +113,6 @@ public final class OpenZLProtobuf {
         OpenZLNative.load();
         configureTrainingNative(messageType, minSamples);
     }
-
     /**
      * Converts a sub-range of the payload, avoiding an intermediate array copy when the caller can
      * expose the backing buffer directly.
@@ -181,6 +180,63 @@ public final class OpenZLProtobuf {
                 outputProtocol.id(),
                 compressor,
                 descriptor.getFullName());
+    }
+
+    /**
+     * Converts a direct {@link ByteBuffer}-backed payload into a caller-provided direct output
+     * buffer. Returns the number of bytes written, or a negative encoded required-capacity marker
+     * when the output buffer is too small.
+     */
+    public static int convertInto(ByteBuffer payload,
+            int length,
+            Protocol inputProtocol,
+            Protocol outputProtocol,
+            ByteBuffer output,
+            Descriptors.Descriptor descriptor) {
+        return convertInto(payload, length, inputProtocol, outputProtocol, null, descriptor, output);
+    }
+
+    /**
+     * Converts a direct {@link ByteBuffer}-backed payload into a caller-provided direct output
+     * buffer while optionally using a trained compressor.
+     */
+    public static int convertInto(ByteBuffer payload,
+            int length,
+            Protocol inputProtocol,
+            Protocol outputProtocol,
+            byte[] compressor,
+            Descriptors.Descriptor descriptor,
+            ByteBuffer output) {
+        Objects.requireNonNull(payload, "payload");
+        Objects.requireNonNull(inputProtocol, "inputProtocol");
+        Objects.requireNonNull(outputProtocol, "outputProtocol");
+        Objects.requireNonNull(descriptor, "descriptor");
+        Objects.requireNonNull(output, "output");
+        if (!payload.isDirect()) {
+            throw new IllegalArgumentException("payload must be a direct ByteBuffer");
+        }
+        if (!output.isDirect()) {
+            throw new IllegalArgumentException("output must be a direct ByteBuffer");
+        }
+        if (length < 0 || length > payload.capacity()) {
+            throw new IllegalArgumentException("length out of bounds: " + length);
+        }
+        registerSchema(descriptor.getFile());
+        int outputPosition = output.position();
+        int written = convertDirectIntoNative(payload,
+                length,
+                inputProtocol.id(),
+                outputProtocol.id(),
+                compressor,
+                descriptor.getFullName(),
+                output,
+                outputPosition,
+                output.remaining());
+        if (written >= 0) {
+            output.limit(outputPosition + written);
+            output.position(outputPosition);
+        }
+        return written;
     }
 
     /**
@@ -475,6 +531,132 @@ public final class OpenZLProtobuf {
         }
     }
 
+    public static long[] directIntoProfileValues() {
+        OpenZLNative.load();
+        long[] values = directIntoProfileNative();
+        if (values == null || values.length < 5) {
+            throw new IllegalStateException("Native direct-into profile snapshot failed");
+        }
+        return values;
+    }
+
+    public static DirectIntoProfileSnapshot directIntoProfile() {
+        long[] values = directIntoProfileValues();
+        return new DirectIntoProfileSnapshot(
+                values[0] != 0L,
+                values[1],
+                values[2],
+                values[3],
+                values[4]);
+    }
+
+    public static long[] structuredProfileValues() {
+        OpenZLNative.load();
+        long[] values = structuredProfileNative();
+        if (values == null || values.length < 6) {
+            throw new IllegalStateException("Native structured profile snapshot failed");
+        }
+        return values;
+    }
+
+    public static StructuredProfileSnapshot structuredProfile() {
+        long[] values = structuredProfileValues();
+        return new StructuredProfileSnapshot(
+                values[0] != 0L,
+                values[1],
+                values[2],
+                values[3],
+                values[4],
+                values[5]);
+    }
+
+    public static final class DirectIntoProfileSnapshot {
+        private final boolean enabled;
+        private final long parseNanos;
+        private final long serializeNanos;
+        private final long writeNanos;
+        private final long calls;
+
+        public DirectIntoProfileSnapshot(boolean enabled,
+                                         long parseNanos,
+                                         long serializeNanos,
+                                         long writeNanos,
+                                         long calls) {
+            this.enabled = enabled;
+            this.parseNanos = parseNanos;
+            this.serializeNanos = serializeNanos;
+            this.writeNanos = writeNanos;
+            this.calls = calls;
+        }
+
+        public boolean enabled() {
+            return enabled;
+        }
+
+        public long parseNanos() {
+            return parseNanos;
+        }
+
+        public long serializeNanos() {
+            return serializeNanos;
+        }
+
+        public long writeNanos() {
+            return writeNanos;
+        }
+
+        public long calls() {
+            return calls;
+        }
+    }
+
+    public static final class StructuredProfileSnapshot {
+        private final boolean enabled;
+        private final long pinNanos;
+        private final long buildNanos;
+        private final long compressNanos;
+        private final long outNanos;
+        private final long calls;
+
+        public StructuredProfileSnapshot(boolean enabled,
+                                         long pinNanos,
+                                         long buildNanos,
+                                         long compressNanos,
+                                         long outNanos,
+                                         long calls) {
+            this.enabled = enabled;
+            this.pinNanos = pinNanos;
+            this.buildNanos = buildNanos;
+            this.compressNanos = compressNanos;
+            this.outNanos = outNanos;
+            this.calls = calls;
+        }
+
+        public boolean enabled() {
+            return enabled;
+        }
+
+        public long pinNanos() {
+            return pinNanos;
+        }
+
+        public long buildNanos() {
+            return buildNanos;
+        }
+
+        public long compressNanos() {
+            return compressNanos;
+        }
+
+        public long outNanos() {
+            return outNanos;
+        }
+
+        public long calls() {
+            return calls;
+        }
+    }
+
     private static void registerSchemaInternal(
             DescriptorProtos.FileDescriptorSet descriptorSet,
             Set<String> fileNames) {
@@ -510,6 +692,19 @@ public final class OpenZLProtobuf {
             int outputProtocol,
             byte[] compressor,
             String messageType);
+
+    private static native int convertDirectIntoNative(ByteBuffer payload,
+            int length,
+            int inputProtocol,
+            int outputProtocol,
+            byte[] compressor,
+            String messageType,
+            ByteBuffer output,
+            int outputPosition,
+            int outputLength);
+
+    private static native long[] directIntoProfileNative();
+    private static native long[] structuredProfileNative();
 
     private static native byte[][] trainNative(byte[][] samples,
             int inputProtocol,

@@ -12,6 +12,7 @@ public class OpenZLCompressor implements AutoCloseable {
     private final OpenZLGraph graph;
     private long nativeHandle;
     private final Cleaner.Cleanable cleanable;
+    private final NativeHandleCleaner nativeHandleCleaner;
     private static final int META_ORIGINAL_SIZE = 0;
     private static final int META_COMPRESSED_SIZE = 1;
     private static final int META_OUTPUT_TYPE = 2;
@@ -32,7 +33,8 @@ public class OpenZLCompressor implements AutoCloseable {
         if (nativeHandle == 0) {
             throw new IllegalStateException("Unable to initialise OpenZL native compressor");
         }
-        cleanable = CLEANER.register(this, new Releaser(this));
+        nativeHandleCleaner = new NativeHandleCleaner(nativeHandle);
+        cleanable = CLEANER.register(this, nativeHandleCleaner);
     }
 
     public OpenZLGraph graph() {
@@ -483,25 +485,32 @@ public class OpenZLCompressor implements AutoCloseable {
     @Override
     public void close() {
         cleanable.clean();
+        nativeHandle = 0;
     }
 
-    private synchronized void cleanup() {
-        if (nativeHandle != 0) {
-            destroyCompressor();
-            nativeHandle = 0;
+    private static synchronized void destroyCompressorHandle(long handle) {
+        if (handle == 0) {
+            return;
         }
+        destroyCompressorHandleNative(handle);
     }
 
-    private static final class Releaser implements Runnable {
-        private final OpenZLCompressor owner;
+    private static native void destroyCompressorHandleNative(long handle);
 
-        private Releaser(OpenZLCompressor owner) {
-            this.owner = owner;
+    private static final class NativeHandleCleaner implements Runnable {
+        private long handle;
+
+        private NativeHandleCleaner(long handle) {
+            this.handle = handle;
         }
 
         @Override
-        public void run() {
-            owner.cleanup();
+        public synchronized void run() {
+            if (handle == 0) {
+                return;
+            }
+            destroyCompressorHandle(handle);
+            handle = 0;
         }
     }
 }

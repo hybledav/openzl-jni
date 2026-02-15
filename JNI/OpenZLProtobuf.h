@@ -9,6 +9,24 @@ extern "C" {
 
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertNative(JNIEnv*, jclass,
         jbyteArray, jint, jint, jbyteArray, jstring);
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertSliceNative(JNIEnv*, jclass,
+        jbyteArray, jint, jint, jint, jint, jbyteArray, jstring);
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectNative(JNIEnv*, jclass,
+        jobject, jint, jint, jint, jbyteArray, jstring);
+JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectIntoNative(JNIEnv*, jclass,
+        jobject, jint, jint, jint, jbyteArray, jstring, jobject, jint, jint);
+JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_directIntoProfileNative(JNIEnv*, jclass);
+JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_structuredProfileNative(JNIEnv*, jclass);
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_compressStructuredNative(JNIEnv*, jclass,
+        jobject, jbyteArray, jstring);
+JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_compressStructuredIntoNative(JNIEnv*, jclass,
+        jobject, jbyteArray, jstring, jobject, jint, jint);
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_decompressStructuredNative(JNIEnv*, jclass,
+        jbyteArray, jstring);
+JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_trainStructuredNative(JNIEnv*, jclass,
+        jobjectArray, jint, jint, jint, jboolean, jstring);
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_compressStructuredSampleNative(JNIEnv*, jclass,
+        jbyteArray, jbyteArray, jstring);
 JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_trainNative(JNIEnv*, jclass,
         jobjectArray, jint, jint, jint, jint, jboolean, jstring);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_configureTrainingNative(JNIEnv*, jclass,
