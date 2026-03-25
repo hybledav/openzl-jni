@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstring>
 #include <memory>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <stdexcept>
@@ -78,6 +79,43 @@ jbyteArray makeByteArray(JNIEnv* env, const std::string& data)
                 reinterpret_cast<const jbyte*>(data.data()));
     }
     return out;
+}
+
+
+jint encodeRequiredLength(size_t required)
+{
+    if (required > static_cast<size_t>(std::numeric_limits<jint>::max() - 1)) {
+        return std::numeric_limits<jint>::min();
+    }
+    return -static_cast<jint>(required) - 1;
+}
+
+jint writeDirectBuffer(JNIEnv* env,
+        jobject outputBuffer,
+        jint outputPosition,
+        jint outputLength,
+        const std::string& data)
+{
+    if (!ensureDirectRange(env, outputBuffer, outputPosition, outputLength, "output")) {
+        return 0;
+    }
+    if (data.size() > static_cast<size_t>(std::numeric_limits<jint>::max())) {
+        throwIllegalState(env, "Converted payload exceeds Java buffer limit");
+        return 0;
+    }
+    if (data.size() > static_cast<size_t>(outputLength)) {
+        return encodeRequiredLength(data.size());
+    }
+    void* outputAddress = env->GetDirectBufferAddress(outputBuffer);
+    if (outputAddress == nullptr) {
+        throwIllegalArgument(env, "output must be a direct ByteBuffer");
+        return 0;
+    }
+    if (!data.empty()) {
+        char* target = static_cast<char*>(outputAddress) + outputPosition;
+        std::memcpy(target, data.data(), data.size());
+    }
+    return static_cast<jint>(data.size());
 }
 
 std::string requireMessageType(JNIEnv* env, jstring typeName)
@@ -184,6 +222,18 @@ struct SerializerCacheEntry {
     }
 };
 
+struct ExplicitSerializerCacheEntry {
+    openzl::protobuf::ProtoSerializer serializer;
+
+    explicit ExplicitSerializerCacheEntry(const std::string& serialized)
+    {
+        openzl::Compressor trained;
+        trained.deserialize(serialized);
+        serializer.setCompressor(std::move(trained));
+        configureSerializer(serializer);
+    }
+};
+
 class CompressorTrainingRegistry {
 public:
     struct State {
@@ -222,6 +272,10 @@ private:
 };
 
 SerializerCacheEntry& serializerEntryForType(const std::string& type);
+openzl::protobuf::ProtoSerializer* serializerForExplicitCompressor(
+        JNIEnv* env,
+        const std::string& type,
+        jbyteArray compressorBytes);
 void applyTrainedCompressor(
         const std::string& typeName,
         SerializerCacheEntry& entry);
@@ -404,6 +458,35 @@ SerializerCacheEntry& serializerEntryForType(const std::string& type)
     return it->second;
 }
 
+openzl::protobuf::ProtoSerializer* serializerForExplicitCompressor(
+        JNIEnv* env,
+        const std::string& type,
+        jbyteArray compressorBytes)
+{
+    if (compressorBytes == nullptr) {
+        return nullptr;
+    }
+
+    std::string serialized = copyArray(env, compressorBytes);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    std::string key;
+    key.reserve(type.size() + 1 + serialized.size());
+    key.append(type);
+    key.push_back('\0');
+    key.append(serialized);
+
+    thread_local std::unordered_map<std::string, std::unique_ptr<ExplicitSerializerCacheEntry>> cache;
+    auto it = cache.find(key);
+    if (it == cache.end()) {
+        auto entry = std::make_unique<ExplicitSerializerCacheEntry>(serialized);
+        it = cache.emplace(std::move(key), std::move(entry)).first;
+    }
+    return &it->second->serializer;
+}
+
 openzl::protobuf::ProtoSerializer& serializerForType(const std::string& type)
 {
     return serializerEntryForType(type).serializer;
@@ -540,19 +623,13 @@ jbyteArray convertPayload(JNIEnv* env,
         const std::string& typeName)
 {
     try {
-        openzl::protobuf::ProtoSerializer localSerializer;
         openzl::protobuf::ProtoSerializer* serializerPtr = nullptr;
         SerializerCacheEntry* serializerEntry = nullptr;
         if (compressorBytes != nullptr) {
-            std::string serialized = copyArray(env, compressorBytes);
-            if (env->ExceptionCheck()) {
+            serializerPtr = serializerForExplicitCompressor(env, typeName, compressorBytes);
+            if (env->ExceptionCheck() || serializerPtr == nullptr) {
                 return nullptr;
             }
-            openzl::Compressor trained;
-            trained.deserialize(serialized);
-            localSerializer.setCompressor(std::move(trained));
-            configureSerializer(localSerializer);
-            serializerPtr = &localSerializer;
         } else {
             serializerEntry = &serializerEntryForType(typeName);
             serializerPtr = &serializerEntry->serializer;
@@ -717,19 +794,13 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     }
 
     try {
-        openzl::protobuf::ProtoSerializer localSerializer;
         openzl::protobuf::ProtoSerializer* serializerPtr = nullptr;
         SerializerCacheEntry* serializerEntry = nullptr;
         if (compressorBytes != nullptr) {
-            std::string serialized = copyArray(env, compressorBytes);
-            if (env->ExceptionCheck()) {
+            serializerPtr = serializerForExplicitCompressor(env, typeName, compressorBytes);
+            if (env->ExceptionCheck() || serializerPtr == nullptr) {
                 return nullptr;
             }
-            openzl::Compressor trained;
-            trained.deserialize(serialized);
-            localSerializer.setCompressor(std::move(trained));
-            serializerPtr = &localSerializer;
-            configureSerializer(localSerializer);
         } else {
             serializerEntry = &serializerEntryForType(typeName);
             serializerPtr = &serializerEntry->serializer;
@@ -760,6 +831,103 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
         return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectIntoNative(
+        JNIEnv* env,
+        jclass,
+        jobject payloadBuffer,
+        jint length,
+        jint inputProtocol,
+        jint outputProtocol,
+        jbyteArray compressorBytes,
+        jstring messageType,
+        jobject outputBuffer,
+        jint outputPosition,
+        jint outputLength)
+{
+    if (payloadBuffer == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "payload");
+        return 0;
+    }
+    if (outputBuffer == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "output");
+        return 0;
+    }
+    if (length < 0) {
+        throwIllegalArgument(env, "length must be non-negative");
+        return 0;
+    }
+    if (outputPosition < 0 || outputLength < 0) {
+        throwIllegalArgument(env, "output position/length must be non-negative");
+        return 0;
+    }
+
+    void* directAddress = env->GetDirectBufferAddress(payloadBuffer);
+    if (directAddress == nullptr) {
+        throwIllegalArgument(env, "payload must be a direct ByteBuffer");
+        return 0;
+    }
+    const char* payloadPtr = static_cast<const char*>(directAddress);
+
+    Protocol inProto = parseProtocol(env, inputProtocol);
+    if (env->ExceptionCheck()) {
+        return 0;
+    }
+    Protocol outProto = parseProtocol(env, outputProtocol);
+    if (env->ExceptionCheck()) {
+        return 0;
+    }
+
+    if (inProto != Protocol::Proto) {
+        throwIllegalArgument(env, "Direct conversion currently supports PROTO input only");
+        return 0;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return 0;
+    }
+
+    try {
+        openzl::protobuf::ProtoSerializer* serializerPtr = nullptr;
+        SerializerCacheEntry* serializerEntry = nullptr;
+        if (compressorBytes != nullptr) {
+            serializerPtr = serializerForExplicitCompressor(env, typeName, compressorBytes);
+            if (env->ExceptionCheck() || serializerPtr == nullptr) {
+                return 0;
+            }
+        } else {
+            serializerEntry = &serializerEntryForType(typeName);
+            serializerPtr = &serializerEntry->serializer;
+        }
+
+        google::protobuf::Message& message = reusableMessage(typeName);
+        message.Clear();
+        if (length > 0 && !message.ParseFromArray(payloadPtr, static_cast<int>(length))) {
+            throwIllegalArgument(env, "Failed to parse protobuf payload");
+            return 0;
+        }
+
+        if (serializerEntry != nullptr) {
+            maybeAugmentTraining(
+                    typeName,
+                    inProto,
+                    payloadPtr,
+                    static_cast<size_t>(length),
+                    *serializerEntry);
+            serializerPtr = &serializerEntry->serializer;
+        }
+
+        std::string result = serialiseMessage(env, outProto, message, *serializerPtr);
+        if (env->ExceptionCheck()) {
+            return 0;
+        }
+        return writeDirectBuffer(env, outputBuffer, outputPosition, outputLength, result);
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return 0;
     }
 }
 
