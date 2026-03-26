@@ -1,6 +1,10 @@
 #include "OpenZLProtobuf.h"
 #include "OpenZLNativeSupport.h"
 
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cstring>
 #include <memory>
@@ -32,6 +36,52 @@ enum class Protocol : jint {
     Zl    = 1,
     Json  = 2,
 };
+
+struct DirectIntoPerfCounters {
+    std::atomic<uint64_t> parseNs{0};
+    std::atomic<uint64_t> serializeNs{0};
+    std::atomic<uint64_t> writeNs{0};
+    std::atomic<uint64_t> calls{0};
+};
+
+DirectIntoPerfCounters& directIntoPerfCounters()
+{
+    static DirectIntoPerfCounters counters;
+    return counters;
+}
+
+bool directIntoPerfEnabled()
+{
+    static bool enabled = []() {
+        const char* raw = std::getenv("OPENZL_JNI_DIRECT_INTO_PROFILE");
+        return raw != nullptr && raw[0] != '\0' && std::strcmp(raw, "0") != 0;
+    }();
+    return enabled;
+}
+
+void recordDirectIntoPerf(uint64_t parseNs, uint64_t serializeNs, uint64_t writeNs)
+{
+    if (!directIntoPerfEnabled()) {
+        return;
+    }
+    auto& counters = directIntoPerfCounters();
+    counters.parseNs.fetch_add(parseNs, std::memory_order_relaxed);
+    counters.serializeNs.fetch_add(serializeNs, std::memory_order_relaxed);
+    counters.writeNs.fetch_add(writeNs, std::memory_order_relaxed);
+    uint64_t calls = counters.calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (calls % 1000 != 0) {
+        return;
+    }
+    double parseUs = static_cast<double>(counters.parseNs.load(std::memory_order_relaxed)) / calls / 1000.0;
+    double serializeUs = static_cast<double>(counters.serializeNs.load(std::memory_order_relaxed)) / calls / 1000.0;
+    double writeUs = static_cast<double>(counters.writeNs.load(std::memory_order_relaxed)) / calls / 1000.0;
+    std::fprintf(stderr,
+            "[openzl-jni] direct-into avg parse=%.2f us serialize=%.2f us write=%.2f us calls=%llu\n",
+            parseUs,
+            serializeUs,
+            writeUs,
+            static_cast<unsigned long long>(calls));
+}
 
 Protocol parseProtocol(JNIEnv* env, jint value)
 {
@@ -834,6 +884,26 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     }
 }
 
+extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_directIntoProfileNative(
+        JNIEnv* env,
+        jclass)
+{
+    auto& counters = directIntoPerfCounters();
+    jlong values[5] = {
+            directIntoPerfEnabled() ? 1 : 0,
+            static_cast<jlong>(counters.parseNs.load(std::memory_order_relaxed)),
+            static_cast<jlong>(counters.serializeNs.load(std::memory_order_relaxed)),
+            static_cast<jlong>(counters.writeNs.load(std::memory_order_relaxed)),
+            static_cast<jlong>(counters.calls.load(std::memory_order_relaxed))};
+    jlongArray out = env->NewLongArray(5);
+    if (out == nullptr) {
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to allocate direct-into profile snapshot");
+        return nullptr;
+    }
+    env->SetLongArrayRegion(out, 0, 5, values);
+    return out;
+}
+
 extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectIntoNative(
         JNIEnv* env,
         jclass,
@@ -905,10 +975,15 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convert
 
         google::protobuf::Message& message = reusableMessage(typeName);
         message.Clear();
+        auto parseStart = std::chrono::steady_clock::now();
         if (length > 0 && !message.ParseFromArray(payloadPtr, static_cast<int>(length))) {
             throwIllegalArgument(env, "Failed to parse protobuf payload");
             return 0;
         }
+        uint64_t parseNs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - parseStart)
+                        .count());
 
         if (serializerEntry != nullptr) {
             maybeAugmentTraining(
@@ -920,11 +995,25 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convert
             serializerPtr = &serializerEntry->serializer;
         }
 
+        auto serializeStart = std::chrono::steady_clock::now();
         std::string result = serialiseMessage(env, outProto, message, *serializerPtr);
         if (env->ExceptionCheck()) {
             return 0;
         }
-        return writeDirectBuffer(env, outputBuffer, outputPosition, outputLength, result);
+        uint64_t serializeNs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - serializeStart)
+                        .count());
+        auto writeStart = std::chrono::steady_clock::now();
+        jint written = writeDirectBuffer(env, outputBuffer, outputPosition, outputLength, result);
+        if (!env->ExceptionCheck() && written > 0) {
+            uint64_t writeNs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now() - writeStart)
+                            .count());
+            recordDirectIntoPerf(parseNs, serializeNs, writeNs);
+        }
+        return written;
     } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
         return 0;

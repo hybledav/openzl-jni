@@ -15,6 +15,7 @@ JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirec
         jobject, jint, jint, jint, jbyteArray, jstring);
 JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectIntoNative(JNIEnv*, jclass,
         jobject, jint, jint, jint, jbyteArray, jstring, jobject, jint, jint);
+JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_directIntoProfileNative(JNIEnv*, jclass);
 JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_trainNative(JNIEnv*, jclass,
         jobjectArray, jint, jint, jint, jint, jboolean, jstring);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_configureTrainingNative(JNIEnv*, jclass,

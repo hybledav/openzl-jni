@@ -531,6 +531,65 @@ public final class OpenZLProtobuf {
         }
     }
 
+    public static long[] directIntoProfileValues() {
+        OpenZLNative.load();
+        long[] values = directIntoProfileNative();
+        if (values == null || values.length < 5) {
+            throw new IllegalStateException("Native direct-into profile snapshot failed");
+        }
+        return values;
+    }
+
+    public static DirectIntoProfileSnapshot directIntoProfile() {
+        long[] values = directIntoProfileValues();
+        return new DirectIntoProfileSnapshot(
+                values[0] != 0L,
+                values[1],
+                values[2],
+                values[3],
+                values[4]);
+    }
+
+    public static final class DirectIntoProfileSnapshot {
+        private final boolean enabled;
+        private final long parseNanos;
+        private final long serializeNanos;
+        private final long writeNanos;
+        private final long calls;
+
+        public DirectIntoProfileSnapshot(boolean enabled,
+                                         long parseNanos,
+                                         long serializeNanos,
+                                         long writeNanos,
+                                         long calls) {
+            this.enabled = enabled;
+            this.parseNanos = parseNanos;
+            this.serializeNanos = serializeNanos;
+            this.writeNanos = writeNanos;
+            this.calls = calls;
+        }
+
+        public boolean enabled() {
+            return enabled;
+        }
+
+        public long parseNanos() {
+            return parseNanos;
+        }
+
+        public long serializeNanos() {
+            return serializeNanos;
+        }
+
+        public long writeNanos() {
+            return writeNanos;
+        }
+
+        public long calls() {
+            return calls;
+        }
+    }
+
     private static void registerSchemaInternal(
             DescriptorProtos.FileDescriptorSet descriptorSet,
             Set<String> fileNames) {
@@ -576,6 +635,8 @@ public final class OpenZLProtobuf {
             ByteBuffer output,
             int outputPosition,
             int outputLength);
+
+    private static native long[] directIntoProfileNative();
 
     private static native byte[][] trainNative(byte[][] samples,
             int inputProtocol,
