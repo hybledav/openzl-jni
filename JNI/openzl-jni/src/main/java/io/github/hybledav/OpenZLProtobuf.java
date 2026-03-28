@@ -550,6 +550,26 @@ public final class OpenZLProtobuf {
                 values[4]);
     }
 
+    public static long[] structuredProfileValues() {
+        OpenZLNative.load();
+        long[] values = structuredProfileNative();
+        if (values == null || values.length < 6) {
+            throw new IllegalStateException("Native structured profile snapshot failed");
+        }
+        return values;
+    }
+
+    public static StructuredProfileSnapshot structuredProfile() {
+        long[] values = structuredProfileValues();
+        return new StructuredProfileSnapshot(
+                values[0] != 0L,
+                values[1],
+                values[2],
+                values[3],
+                values[4],
+                values[5]);
+    }
+
     public static final class DirectIntoProfileSnapshot {
         private final boolean enabled;
         private final long parseNanos;
@@ -583,6 +603,53 @@ public final class OpenZLProtobuf {
 
         public long writeNanos() {
             return writeNanos;
+        }
+
+        public long calls() {
+            return calls;
+        }
+    }
+
+    public static final class StructuredProfileSnapshot {
+        private final boolean enabled;
+        private final long pinNanos;
+        private final long buildNanos;
+        private final long compressNanos;
+        private final long outNanos;
+        private final long calls;
+
+        public StructuredProfileSnapshot(boolean enabled,
+                                         long pinNanos,
+                                         long buildNanos,
+                                         long compressNanos,
+                                         long outNanos,
+                                         long calls) {
+            this.enabled = enabled;
+            this.pinNanos = pinNanos;
+            this.buildNanos = buildNanos;
+            this.compressNanos = compressNanos;
+            this.outNanos = outNanos;
+            this.calls = calls;
+        }
+
+        public boolean enabled() {
+            return enabled;
+        }
+
+        public long pinNanos() {
+            return pinNanos;
+        }
+
+        public long buildNanos() {
+            return buildNanos;
+        }
+
+        public long compressNanos() {
+            return compressNanos;
+        }
+
+        public long outNanos() {
+            return outNanos;
         }
 
         public long calls() {
@@ -637,6 +704,7 @@ public final class OpenZLProtobuf {
             int outputLength);
 
     private static native long[] directIntoProfileNative();
+    private static native long[] structuredProfileNative();
 
     private static native byte[][] trainNative(byte[][] samples,
             int inputProtocol,

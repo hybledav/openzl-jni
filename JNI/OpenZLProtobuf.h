@@ -16,6 +16,7 @@ JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirec
 JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectIntoNative(JNIEnv*, jclass,
         jobject, jint, jint, jint, jbyteArray, jstring, jobject, jint, jint);
 JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_directIntoProfileNative(JNIEnv*, jclass);
+JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_structuredProfileNative(JNIEnv*, jclass);
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_compressStructuredNative(JNIEnv*, jclass,
         jobject, jbyteArray, jstring);
 JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_trainNative(JNIEnv*, jclass,

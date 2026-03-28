@@ -45,9 +45,23 @@ struct DirectIntoPerfCounters {
     std::atomic<uint64_t> calls{0};
 };
 
+struct StructuredPerfCounters {
+    std::atomic<uint64_t> pinNs{0};
+    std::atomic<uint64_t> buildNs{0};
+    std::atomic<uint64_t> compressNs{0};
+    std::atomic<uint64_t> outNs{0};
+    std::atomic<uint64_t> calls{0};
+};
+
 DirectIntoPerfCounters& directIntoPerfCounters()
 {
     static DirectIntoPerfCounters counters;
+    return counters;
+}
+
+StructuredPerfCounters& structuredPerfCounters()
+{
+    static StructuredPerfCounters counters;
     return counters;
 }
 
@@ -55,6 +69,15 @@ bool directIntoPerfEnabled()
 {
     static bool enabled = []() {
         const char* raw = std::getenv("OPENZL_JNI_DIRECT_INTO_PROFILE");
+        return raw != nullptr && raw[0] != '\0' && std::strcmp(raw, "0") != 0;
+    }();
+    return enabled;
+}
+
+bool structuredPerfEnabled()
+{
+    static bool enabled = []() {
+        const char* raw = std::getenv("OPENZL_JNI_STRUCTURED_PROFILE");
         return raw != nullptr && raw[0] != '\0' && std::strcmp(raw, "0") != 0;
     }();
     return enabled;
@@ -81,6 +104,33 @@ void recordDirectIntoPerf(uint64_t parseNs, uint64_t serializeNs, uint64_t write
             parseUs,
             serializeUs,
             writeUs,
+            static_cast<unsigned long long>(calls));
+}
+
+void recordStructuredPerf(uint64_t pinNs, uint64_t buildNs, uint64_t compressNs, uint64_t outNs)
+{
+    if (!structuredPerfEnabled()) {
+        return;
+    }
+    auto& counters = structuredPerfCounters();
+    counters.pinNs.fetch_add(pinNs, std::memory_order_relaxed);
+    counters.buildNs.fetch_add(buildNs, std::memory_order_relaxed);
+    counters.compressNs.fetch_add(compressNs, std::memory_order_relaxed);
+    counters.outNs.fetch_add(outNs, std::memory_order_relaxed);
+    uint64_t calls = counters.calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (calls % 1000 != 0) {
+        return;
+    }
+    double pinUs = static_cast<double>(counters.pinNs.load(std::memory_order_relaxed)) / calls / 1000.0;
+    double buildUs = static_cast<double>(counters.buildNs.load(std::memory_order_relaxed)) / calls / 1000.0;
+    double compressUs = static_cast<double>(counters.compressNs.load(std::memory_order_relaxed)) / calls / 1000.0;
+    double outUs = static_cast<double>(counters.outNs.load(std::memory_order_relaxed)) / calls / 1000.0;
+    std::fprintf(stderr,
+            "[openzl-jni] structured avg pin=%.2f us build=%.2f us compress=%.2f us out=%.2f us calls=%llu\n",
+            pinUs,
+            buildUs,
+            compressUs,
+            outUs,
             static_cast<unsigned long long>(calls));
 }
 
@@ -891,14 +941,19 @@ jbyteArray compressStructuredPayload(
         const std::string& typeName)
 {
     StructuredPinnedBuffers buffers;
+    const auto pinStart = std::chrono::steady_clock::now();
     if (!pinStructuredBuffers(env, structuredInputs, buffers)) {
         releaseStructuredPinnedBuffers(env, buffers);
         return nullptr;
     }
+    const auto pinEnd = std::chrono::steady_clock::now();
 
     try {
+        const auto buildStart = std::chrono::steady_clock::now();
         auto inputs = buildStructuredInputs(buffers);
+        const auto buildEnd = std::chrono::steady_clock::now();
         std::string result;
+        const auto compressStart = std::chrono::steady_clock::now();
         if (compressorBytes != nullptr) {
             std::string serialized = copyArray(env, compressorBytes);
             if (env->ExceptionCheck()) {
@@ -917,8 +972,17 @@ jbyteArray compressStructuredPayload(
             }
             result = structuredEntry.cctx.compress(inputs);
         }
+        const auto compressEnd = std::chrono::steady_clock::now();
         releaseStructuredPinnedBuffers(env, buffers);
-        return makeByteArray(env, result);
+        const auto outStart = std::chrono::steady_clock::now();
+        jbyteArray out = makeByteArray(env, result);
+        const auto outEnd = std::chrono::steady_clock::now();
+        recordStructuredPerf(
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(pinEnd - pinStart).count()),
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(buildEnd - buildStart).count()),
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(compressEnd - compressStart).count()),
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(outEnd - outStart).count()));
+        return out;
     } catch (const std::exception& ex) {
         releaseStructuredPinnedBuffers(env, buffers);
         throwIllegalState(env, ex.what());
@@ -1163,6 +1227,27 @@ extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_d
         return nullptr;
     }
     env->SetLongArrayRegion(out, 0, 5, values);
+    return out;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_structuredProfileNative(
+        JNIEnv* env,
+        jclass)
+{
+    auto& counters = structuredPerfCounters();
+    jlong values[6] = {
+            structuredPerfEnabled() ? 1 : 0,
+            static_cast<jlong>(counters.pinNs.load(std::memory_order_relaxed)),
+            static_cast<jlong>(counters.buildNs.load(std::memory_order_relaxed)),
+            static_cast<jlong>(counters.compressNs.load(std::memory_order_relaxed)),
+            static_cast<jlong>(counters.outNs.load(std::memory_order_relaxed)),
+            static_cast<jlong>(counters.calls.load(std::memory_order_relaxed))};
+    jlongArray out = env->NewLongArray(6);
+    if (out == nullptr) {
+        throwNew(env, JniRefs().outOfMemoryError, "Unable to allocate structured profile snapshot");
+        return nullptr;
+    }
+    env->SetLongArrayRegion(out, 0, 6, values);
     return out;
 }
 
