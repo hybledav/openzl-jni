@@ -20,6 +20,7 @@
 #include "google/protobuf/descriptor_database.h"
 #include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/util/json_util.h"
+#include "openzl/codecs/zl_clustering.h"
 #include "openzl/cpp/CParam.hpp"
 #include "openzl/shared/string_view.h"
 #include "openzl/zl_reflection.h"
@@ -664,6 +665,267 @@ void maybeAugmentTraining(
     }
 }
 
+
+struct StructuredJNIRefs {
+    jclass inputsClass = nullptr;
+    jfieldID streamsField = nullptr;
+    jclass byteAccumulatorClass = nullptr;
+    jfieldID dataField = nullptr;
+    jfieldID sizeField = nullptr;
+};
+
+StructuredJNIRefs& structuredJniRefs()
+{
+    static StructuredJNIRefs refs;
+    return refs;
+}
+
+bool ensureStructuredJniRefs(JNIEnv* env)
+{
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto& refs = structuredJniRefs();
+    if (refs.inputsClass != nullptr) {
+        return true;
+    }
+
+    jclass localInputs = env->FindClass("io/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs");
+    if (localInputs == nullptr) {
+        return false;
+    }
+    refs.inputsClass = static_cast<jclass>(env->NewGlobalRef(localInputs));
+    env->DeleteLocalRef(localInputs);
+    if (refs.inputsClass == nullptr) {
+        return false;
+    }
+    refs.streamsField = env->GetFieldID(
+            refs.inputsClass,
+            "streams",
+            "[Lio/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$ByteAccumulator;");
+    if (refs.streamsField == nullptr) {
+        return false;
+    }
+
+    jclass localAccumulator = env->FindClass("io/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$ByteAccumulator");
+    if (localAccumulator == nullptr) {
+        return false;
+    }
+    refs.byteAccumulatorClass = static_cast<jclass>(env->NewGlobalRef(localAccumulator));
+    env->DeleteLocalRef(localAccumulator);
+    if (refs.byteAccumulatorClass == nullptr) {
+        return false;
+    }
+    refs.dataField = env->GetFieldID(refs.byteAccumulatorClass, "data", "Ljava/nio/ByteBuffer;");
+    refs.sizeField = env->GetFieldID(refs.byteAccumulatorClass, "size", "I");
+    return refs.dataField != nullptr && refs.sizeField != nullptr;
+}
+
+struct StructuredPinnedBuffers {
+    jobjectArray streams = nullptr;
+    std::array<jobject, openzl::protobuf::kNumInputs> accumulators{};
+    std::array<jobject, openzl::protobuf::kNumInputs> directBuffers{};
+    std::array<const unsigned char*, openzl::protobuf::kNumInputs> addresses{};
+    std::array<size_t, openzl::protobuf::kNumInputs> sizes{};
+};
+
+void releaseStructuredPinnedBuffers(JNIEnv* env, StructuredPinnedBuffers& buffers)
+{
+    for (size_t i = 0; i < openzl::protobuf::kNumInputs; ++i) {
+        if (buffers.directBuffers[i] != nullptr) {
+            env->DeleteLocalRef(buffers.directBuffers[i]);
+            buffers.directBuffers[i] = nullptr;
+        }
+        if (buffers.accumulators[i] != nullptr) {
+            env->DeleteLocalRef(buffers.accumulators[i]);
+            buffers.accumulators[i] = nullptr;
+        }
+    }
+    if (buffers.streams != nullptr) {
+        env->DeleteLocalRef(buffers.streams);
+        buffers.streams = nullptr;
+    }
+}
+
+bool pinStructuredBuffers(JNIEnv* env, jobject inputs, StructuredPinnedBuffers& buffers)
+{
+    if (!ensureStructuredJniRefs(env)) {
+        return false;
+    }
+    auto& refs = structuredJniRefs();
+    buffers.streams = static_cast<jobjectArray>(env->GetObjectField(inputs, refs.streamsField));
+    if (buffers.streams == nullptr) {
+        return !env->ExceptionCheck();
+    }
+    for (size_t i = 0; i < openzl::protobuf::kNumInputs; ++i) {
+        jobject accumulator = env->GetObjectArrayElement(buffers.streams, static_cast<jsize>(i));
+        if (accumulator == nullptr) {
+            return false;
+        }
+        buffers.accumulators[i] = accumulator;
+        jobject data = env->GetObjectField(accumulator, refs.dataField);
+        if (data == nullptr) {
+            return false;
+        }
+        buffers.directBuffers[i] = data;
+        jint size = env->GetIntField(accumulator, refs.sizeField);
+        if (size < 0) {
+            throwIllegalState(env, "Structured protobuf input stream size must be non-negative");
+            return false;
+        }
+        buffers.sizes[i] = static_cast<size_t>(size);
+        if (buffers.sizes[i] == 0) {
+            buffers.addresses[i] = nullptr;
+            continue;
+        }
+        void* address = env->GetDirectBufferAddress(data);
+        if (address == nullptr) {
+            throwIllegalState(env, "Structured protobuf input buffer must be direct");
+            return false;
+        }
+        buffers.addresses[i] = static_cast<const unsigned char*>(address);
+    }
+    return true;
+}
+
+void configureStructuredCCtx(openzl::CCtx& cctx)
+{
+    cctx.setParameter(openzl::CParam::StickyParameters, 1);
+    cctx.setParameter(openzl::CParam::CompressionLevel, 1);
+    cctx.setParameter(openzl::CParam::FormatVersion, ZL_MAX_FORMAT_VERSION);
+}
+
+struct StructuredSerializerCacheEntry {
+    openzl::CCtx cctx;
+    bool bound = false;
+    size_t appliedGeneration = 0;
+
+    StructuredSerializerCacheEntry()
+    {
+        configureStructuredCCtx(cctx);
+    }
+};
+
+StructuredSerializerCacheEntry& structuredSerializerEntryForType(const std::string& type)
+{
+    thread_local std::unordered_map<std::string, StructuredSerializerCacheEntry> cache;
+    auto [it, inserted] = cache.try_emplace(type);
+    (void)inserted;
+    return it->second;
+}
+
+struct ExplicitStructuredCacheEntry {
+    openzl::protobuf::ProtoSerializer serializer;
+    openzl::CCtx cctx;
+
+    explicit ExplicitStructuredCacheEntry(const std::string& serialized)
+    {
+        openzl::Compressor trained;
+        trained.deserialize(serialized);
+        serializer.setCompressor(std::move(trained));
+        configureSerializer(serializer);
+        configureStructuredCCtx(cctx);
+        cctx.refCompressor(*serializer.getCompressor());
+    }
+};
+
+ExplicitStructuredCacheEntry& explicitStructuredEntryForCompressor(
+        const std::string& type,
+        const std::string& serialized)
+{
+    std::string key;
+    key.reserve(type.size() + 1 + serialized.size());
+    key.append(type);
+    key.push_back('\0');
+    key.append(serialized);
+
+    thread_local std::unordered_map<std::string, std::unique_ptr<ExplicitStructuredCacheEntry>> cache;
+    auto it = cache.find(key);
+    if (it == cache.end()) {
+        auto entry = std::make_unique<ExplicitStructuredCacheEntry>(serialized);
+        it = cache.emplace(std::move(key), std::move(entry)).first;
+    }
+    return *it->second;
+}
+
+std::vector<openzl::Input> buildStructuredInputs(const StructuredPinnedBuffers& buffers)
+{
+    std::vector<openzl::Input> inputs;
+    inputs.reserve(openzl::protobuf::kNumInputs);
+    for (size_t i = 0; i < openzl::protobuf::kNumInputs; ++i) {
+        const auto inputType = static_cast<openzl::protobuf::InputType>(i);
+        const void* ptr = buffers.sizes[i] == 0 ? nullptr : static_cast<const void*>(buffers.addresses[i]);
+        switch (inputType) {
+        case openzl::protobuf::InputType::FIELD_ID:
+        case openzl::protobuf::InputType::FIELD_TYPE:
+        case openzl::protobuf::InputType::FIELD_LENGTH:
+        case openzl::protobuf::InputType::INT32:
+        case openzl::protobuf::InputType::UINT32:
+        case openzl::protobuf::InputType::FLOAT:
+        case openzl::protobuf::InputType::ENUM:
+            inputs.emplace_back(openzl::Input::refNumeric(ptr, 4, buffers.sizes[i] / 4));
+            break;
+        case openzl::protobuf::InputType::INT64:
+        case openzl::protobuf::InputType::UINT64:
+        case openzl::protobuf::InputType::DOUBLE:
+            inputs.emplace_back(openzl::Input::refNumeric(ptr, 8, buffers.sizes[i] / 8));
+            break;
+        case openzl::protobuf::InputType::BOOL:
+            inputs.emplace_back(openzl::Input::refNumeric(ptr, 1, buffers.sizes[i]));
+            break;
+        case openzl::protobuf::InputType::STRING:
+            inputs.emplace_back(openzl::Input::refSerial(ptr, buffers.sizes[i]));
+            break;
+        case openzl::protobuf::InputType::INVALID:
+        default:
+            throw std::runtime_error("Unsupported structured protobuf input type");
+        }
+        inputs.back().setIntMetadata(ZL_CLUSTERING_TAG_METADATA_ID, static_cast<int>(i));
+    }
+    return inputs;
+}
+
+jbyteArray compressStructuredPayload(
+        JNIEnv* env,
+        jobject structuredInputs,
+        jbyteArray compressorBytes,
+        const std::string& typeName)
+{
+    StructuredPinnedBuffers buffers;
+    if (!pinStructuredBuffers(env, structuredInputs, buffers)) {
+        releaseStructuredPinnedBuffers(env, buffers);
+        return nullptr;
+    }
+
+    try {
+        auto inputs = buildStructuredInputs(buffers);
+        std::string result;
+        if (compressorBytes != nullptr) {
+            std::string serialized = copyArray(env, compressorBytes);
+            if (env->ExceptionCheck()) {
+                releaseStructuredPinnedBuffers(env, buffers);
+                return nullptr;
+            }
+            auto& entry = explicitStructuredEntryForCompressor(typeName, serialized);
+            result = entry.cctx.compress(inputs);
+        } else {
+            auto& serializerEntry = serializerEntryForType(typeName);
+            auto& structuredEntry = structuredSerializerEntryForType(typeName);
+            if (!structuredEntry.bound || structuredEntry.appliedGeneration != serializerEntry.appliedGeneration) {
+                structuredEntry.cctx.refCompressor(*serializerEntry.serializer.getCompressor());
+                structuredEntry.bound = true;
+                structuredEntry.appliedGeneration = serializerEntry.appliedGeneration;
+            }
+            result = structuredEntry.cctx.compress(inputs);
+        }
+        releaseStructuredPinnedBuffers(env, buffers);
+        return makeByteArray(env, result);
+    } catch (const std::exception& ex) {
+        releaseStructuredPinnedBuffers(env, buffers);
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
+
 jbyteArray convertPayload(JNIEnv* env,
         Protocol inProto,
         Protocol outProto,
@@ -902,6 +1164,31 @@ extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_d
     }
     env->SetLongArrayRegion(out, 0, 5, values);
     return out;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_compressStructuredNative(
+        JNIEnv* env,
+        jclass,
+        jobject structuredInputs,
+        jbyteArray compressorBytes,
+        jstring messageType)
+{
+    if (structuredInputs == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "inputs");
+        return nullptr;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    if (!DescriptorRegistry::instance().hasType(typeName)) {
+        throwIllegalArgument(env, "Unknown protobuf message type: " + typeName);
+        return nullptr;
+    }
+
+    return compressStructuredPayload(env, structuredInputs, compressorBytes, typeName);
 }
 
 extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectIntoNative(
