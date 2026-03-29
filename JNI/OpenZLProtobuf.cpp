@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
+#include <deque>
 
 #include "google/protobuf/descriptor.h"
 #include "google/protobuf/descriptor.pb.h"
@@ -27,6 +28,7 @@
 #include "tools/protobuf/ProtoDeserializer.h"
 #include "tools/protobuf/ProtoGraph.h"
 #include "tools/protobuf/ProtoSerializer.h"
+#include "tools/protobuf/StringReader.h"
 #include "tools/training/train.h"
 #include "tools/training/train_params.h"
 #include "tools/training/utils/utils.h"
@@ -82,6 +84,20 @@ bool structuredPerfEnabled()
     }();
     return enabled;
 }
+
+constexpr int kStructuredFieldIdTag = -1;
+constexpr int kStructuredFieldTypeTag = -2;
+constexpr int kStructuredFieldLengthTag = -3;
+constexpr uint32_t kStructuredControlMagic = 0x5A4C5053u;
+constexpr uint32_t kStructuredControlFieldIds = 1u;
+constexpr uint32_t kStructuredControlFieldTypes = 2u;
+constexpr uint32_t kStructuredControlFieldLengths = 3u;
+constexpr uint32_t kStructuredRootPathHash = 0x811c9dc5u;
+constexpr uint32_t kStructuredFnvPrime = 0x01000193u;
+
+uint32_t structuredFNV(uint32_t hash, uint32_t value);
+uint32_t structuredExtendPathHash(uint32_t pathHash, uint32_t fieldNumber);
+int structuredFieldTag(uint32_t pathHash, uint32_t fieldNumber);
 
 void recordDirectIntoPerf(uint64_t parseNs, uint64_t serializeNs, uint64_t writeNs)
 {
@@ -416,6 +432,12 @@ public:
         return findDescriptorLocked(type) != nullptr;
     }
 
+    const google::protobuf::Descriptor* descriptor(const std::string& type)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return findDescriptorLocked(type);
+    }
+
 private:
     DescriptorRegistry()
             : generated_db_(*google::protobuf::DescriptorPool::generated_pool()),
@@ -498,6 +520,105 @@ google::protobuf::Message& reusableMessage(const std::string& type)
     google::protobuf::Message* message = it->second.get();
     message->Clear();
     return *message;
+}
+
+constexpr size_t kStructuredSerialCodecIdx = 0;
+constexpr size_t kStructuredStructCodecIdx = 1;
+constexpr size_t kStructuredNumericCodecIdx = 2;
+constexpr size_t kStructuredStringCodecIdx = 3;
+
+ZL_ClusteringConfig_TypeSuccessor makeStructuredTypeSuccessor(ZL_Type type, size_t eltWidth, size_t codecIdx)
+{
+    ZL_ClusteringConfig_TypeSuccessor successor{};
+    successor.type = type;
+    successor.eltWidth = eltWidth;
+    successor.successorIdx = 0;
+    successor.clusteringCodecIdx = codecIdx;
+    return successor;
+}
+
+ZL_ClusteringConfig_TypeSuccessor makeStructuredFieldSuccessor(const google::protobuf::FieldDescriptor* field)
+{
+    switch (field->cpp_type()) {
+        case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+        case google::protobuf::FieldDescriptor::CPPTYPE_UINT32:
+        case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+        case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:
+            return makeStructuredTypeSuccessor(ZL_Type_numeric, 4, kStructuredNumericCodecIdx);
+        case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+        case google::protobuf::FieldDescriptor::CPPTYPE_UINT64:
+        case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+            return makeStructuredTypeSuccessor(ZL_Type_numeric, 8, kStructuredNumericCodecIdx);
+        case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+            return makeStructuredTypeSuccessor(ZL_Type_numeric, 1, kStructuredNumericCodecIdx);
+        case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+            return makeStructuredTypeSuccessor(ZL_Type_string, 0, kStructuredStringCodecIdx);
+        case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
+            break;
+    }
+    throw std::runtime_error("Unsupported structured protobuf field type for clustering");
+}
+
+void collectStructuredFieldClusters(
+        const google::protobuf::Descriptor* descriptor,
+        uint32_t pathHash,
+        std::vector<std::pair<int, ZL_ClusteringConfig_TypeSuccessor>>& taggedClusters)
+{
+    for (int i = 0; i < descriptor->field_count(); ++i) {
+        const auto* field = descriptor->field(i);
+        if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+            collectStructuredFieldClusters(
+                    field->message_type(),
+                    structuredExtendPathHash(pathHash, static_cast<uint32_t>(field->number())),
+                    taggedClusters);
+            continue;
+        }
+        taggedClusters.emplace_back(
+                structuredFieldTag(pathHash, static_cast<uint32_t>(field->number())),
+                makeStructuredFieldSuccessor(field));
+    }
+}
+
+openzl::Compressor createStructuredCompressorForType(const std::string& typeName)
+{
+    const auto* descriptor = DescriptorRegistry::instance().descriptor(typeName);
+    if (descriptor == nullptr) {
+        throw std::runtime_error("Unknown protobuf message type: " + typeName);
+    }
+
+    openzl::Compressor compressor;
+    auto ace = ZL_Compressor_buildACEGraph(compressor.get());
+    const ZL_GraphID successors[1] = { ace };
+
+    std::vector<std::pair<int, ZL_ClusteringConfig_TypeSuccessor>> taggedClusters;
+    taggedClusters.reserve(static_cast<size_t>(descriptor->field_count()) + 3u);
+
+    auto controlSuccessor = makeStructuredTypeSuccessor(ZL_Type_numeric, 4, kStructuredNumericCodecIdx);
+    taggedClusters.emplace_back(kStructuredFieldIdTag, controlSuccessor);
+    taggedClusters.emplace_back(kStructuredFieldTypeTag, controlSuccessor);
+    taggedClusters.emplace_back(kStructuredFieldLengthTag, controlSuccessor);
+    collectStructuredFieldClusters(descriptor, kStructuredRootPathHash, taggedClusters);
+
+    std::vector<int> memberTags(taggedClusters.size());
+    std::vector<ZL_ClusteringConfig_Cluster> clusters(taggedClusters.size());
+    for (size_t i = 0; i < taggedClusters.size(); ++i) {
+        memberTags[i] = taggedClusters[i].first;
+        clusters[i].typeSuccessor = taggedClusters[i].second;
+        clusters[i].memberTags = &memberTags[i];
+        clusters[i].nbMemberTags = 1;
+    }
+
+    ZL_ClusteringConfig config{};
+    config.clusters = clusters.data();
+    config.nbClusters = clusters.size();
+    config.typeDefaults = nullptr;
+    config.nbTypeDefaults = 0;
+
+    auto graphId = ZL_Clustering_registerGraph(compressor.get(), &config, successors, 1);
+    compressor.selectStartingGraph(graphId);
+    compressor.setParameter(openzl::CParam::CompressionLevel, 1);
+    compressor.setParameter(openzl::CParam::MinStreamSize, 0);
+    return compressor;
 }
 
 std::string trainCompressorFromSamples(
@@ -718,7 +839,18 @@ void maybeAugmentTraining(
 
 struct StructuredJNIRefs {
     jclass inputsClass = nullptr;
-    jfieldID streamsField = nullptr;
+    jfieldID fieldIdsField = nullptr;
+    jfieldID fieldTypesField = nullptr;
+    jfieldID fieldLengthsField = nullptr;
+    jfieldID fieldsField = nullptr;
+    jfieldID fieldCountField = nullptr;
+
+    jclass fieldStreamClass = nullptr;
+    jfieldID fieldStreamTagField = nullptr;
+    jfieldID fieldStreamKindField = nullptr;
+    jfieldID fieldStreamDataField = nullptr;
+    jfieldID fieldStreamLengthsField = nullptr;
+
     jclass byteAccumulatorClass = nullptr;
     jfieldID dataField = nullptr;
     jfieldID sizeField = nullptr;
@@ -728,6 +860,27 @@ StructuredJNIRefs& structuredJniRefs()
 {
     static StructuredJNIRefs refs;
     return refs;
+}
+
+uint32_t structuredFNV(uint32_t hash, uint32_t value)
+{
+    return (hash ^ value) * kStructuredFnvPrime;
+}
+
+uint32_t structuredExtendPathHash(uint32_t pathHash, uint32_t fieldNumber)
+{
+    uint32_t hash = pathHash;
+    hash = structuredFNV(hash, fieldNumber & 0xFFu);
+    hash = structuredFNV(hash, (fieldNumber >> 8) & 0xFFu);
+    hash = structuredFNV(hash, (fieldNumber >> 16) & 0xFFu);
+    hash = structuredFNV(hash, (fieldNumber >> 24) & 0xFFu);
+    return hash;
+}
+
+int structuredFieldTag(uint32_t pathHash, uint32_t fieldNumber)
+{
+    uint32_t tag = structuredExtendPathHash(pathHash, fieldNumber) & 0x7fffffffu;
+    return tag == 0 ? 1 : static_cast<int>(tag);
 }
 
 bool ensureStructuredJniRefs(JNIEnv* env)
@@ -748,11 +901,29 @@ bool ensureStructuredJniRefs(JNIEnv* env)
     if (refs.inputsClass == nullptr) {
         return false;
     }
-    refs.streamsField = env->GetFieldID(
-            refs.inputsClass,
-            "streams",
-            "[Lio/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$ByteAccumulator;");
-    if (refs.streamsField == nullptr) {
+    refs.fieldIdsField = env->GetFieldID(refs.inputsClass, "fieldIds", "Lio/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$ByteAccumulator;");
+    refs.fieldTypesField = env->GetFieldID(refs.inputsClass, "fieldTypes", "Lio/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$ByteAccumulator;");
+    refs.fieldLengthsField = env->GetFieldID(refs.inputsClass, "fieldLengths", "Lio/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$ByteAccumulator;");
+    refs.fieldsField = env->GetFieldID(refs.inputsClass, "fields", "[Lio/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$FieldStream;");
+    refs.fieldCountField = env->GetFieldID(refs.inputsClass, "fieldCount", "I");
+    if (refs.fieldIdsField == nullptr || refs.fieldTypesField == nullptr || refs.fieldLengthsField == nullptr || refs.fieldsField == nullptr || refs.fieldCountField == nullptr) {
+        return false;
+    }
+
+    jclass localFieldStream = env->FindClass("io/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$FieldStream");
+    if (localFieldStream == nullptr) {
+        return false;
+    }
+    refs.fieldStreamClass = static_cast<jclass>(env->NewGlobalRef(localFieldStream));
+    env->DeleteLocalRef(localFieldStream);
+    if (refs.fieldStreamClass == nullptr) {
+        return false;
+    }
+    refs.fieldStreamTagField = env->GetFieldID(refs.fieldStreamClass, "tag", "I");
+    refs.fieldStreamKindField = env->GetFieldID(refs.fieldStreamClass, "kind", "I");
+    refs.fieldStreamDataField = env->GetFieldID(refs.fieldStreamClass, "data", "Lio/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$ByteAccumulator;");
+    refs.fieldStreamLengthsField = env->GetFieldID(refs.fieldStreamClass, "lengths", "Lio/github/hybledav/quarkus/grpc/OpenZLStructuredProtoInputs$ByteAccumulator;");
+    if (refs.fieldStreamTagField == nullptr || refs.fieldStreamKindField == nullptr || refs.fieldStreamDataField == nullptr || refs.fieldStreamLengthsField == nullptr) {
         return false;
     }
 
@@ -770,29 +941,95 @@ bool ensureStructuredJniRefs(JNIEnv* env)
     return refs.dataField != nullptr && refs.sizeField != nullptr;
 }
 
+struct PinnedAccumulator {
+    jobject accumulator = nullptr;
+    jobject directBuffer = nullptr;
+    const unsigned char* address = nullptr;
+    size_t size = 0;
+};
+
+void releasePinnedAccumulator(JNIEnv* env, PinnedAccumulator& pinned)
+{
+    if (pinned.directBuffer != nullptr) {
+        env->DeleteLocalRef(pinned.directBuffer);
+        pinned.directBuffer = nullptr;
+    }
+    if (pinned.accumulator != nullptr) {
+        env->DeleteLocalRef(pinned.accumulator);
+        pinned.accumulator = nullptr;
+    }
+    pinned.address = nullptr;
+    pinned.size = 0;
+}
+
+bool pinAccumulator(JNIEnv* env, jobject accumulator, PinnedAccumulator& pinned, bool allowNull)
+{
+    if (accumulator == nullptr) {
+        if (allowNull) {
+            return true;
+        }
+        throwIllegalState(env, "Structured protobuf accumulator must not be null");
+        return false;
+    }
+    auto& refs = structuredJniRefs();
+    pinned.accumulator = accumulator;
+    jobject data = env->GetObjectField(accumulator, refs.dataField);
+    if (data == nullptr) {
+        return false;
+    }
+    pinned.directBuffer = data;
+    jint size = env->GetIntField(accumulator, refs.sizeField);
+    if (size < 0) {
+        throwIllegalState(env, "Structured protobuf input stream size must be non-negative");
+        return false;
+    }
+    pinned.size = static_cast<size_t>(size);
+    if (pinned.size == 0) {
+        pinned.address = nullptr;
+        return true;
+    }
+    void* address = env->GetDirectBufferAddress(data);
+    if (address == nullptr) {
+        throwIllegalState(env, "Structured protobuf input buffer must be direct");
+        return false;
+    }
+    pinned.address = static_cast<const unsigned char*>(address);
+    return true;
+}
+
+struct StructuredPinnedField {
+    jobject fieldStream = nullptr;
+    int tag = 0;
+    int kind = 0;
+    PinnedAccumulator data;
+    PinnedAccumulator lengths;
+};
+
 struct StructuredPinnedBuffers {
-    jobjectArray streams = nullptr;
-    std::array<jobject, openzl::protobuf::kNumInputs> accumulators{};
-    std::array<jobject, openzl::protobuf::kNumInputs> directBuffers{};
-    std::array<const unsigned char*, openzl::protobuf::kNumInputs> addresses{};
-    std::array<size_t, openzl::protobuf::kNumInputs> sizes{};
+    PinnedAccumulator fieldIds;
+    PinnedAccumulator fieldTypes;
+    PinnedAccumulator fieldLengths;
+    jobjectArray fields = nullptr;
+    std::vector<StructuredPinnedField> valueStreams;
 };
 
 void releaseStructuredPinnedBuffers(JNIEnv* env, StructuredPinnedBuffers& buffers)
 {
-    for (size_t i = 0; i < openzl::protobuf::kNumInputs; ++i) {
-        if (buffers.directBuffers[i] != nullptr) {
-            env->DeleteLocalRef(buffers.directBuffers[i]);
-            buffers.directBuffers[i] = nullptr;
-        }
-        if (buffers.accumulators[i] != nullptr) {
-            env->DeleteLocalRef(buffers.accumulators[i]);
-            buffers.accumulators[i] = nullptr;
+    releasePinnedAccumulator(env, buffers.fieldIds);
+    releasePinnedAccumulator(env, buffers.fieldTypes);
+    releasePinnedAccumulator(env, buffers.fieldLengths);
+    for (auto& stream : buffers.valueStreams) {
+        releasePinnedAccumulator(env, stream.data);
+        releasePinnedAccumulator(env, stream.lengths);
+        if (stream.fieldStream != nullptr) {
+            env->DeleteLocalRef(stream.fieldStream);
+            stream.fieldStream = nullptr;
         }
     }
-    if (buffers.streams != nullptr) {
-        env->DeleteLocalRef(buffers.streams);
-        buffers.streams = nullptr;
+    buffers.valueStreams.clear();
+    if (buffers.fields != nullptr) {
+        env->DeleteLocalRef(buffers.fields);
+        buffers.fields = nullptr;
     }
 }
 
@@ -802,37 +1039,48 @@ bool pinStructuredBuffers(JNIEnv* env, jobject inputs, StructuredPinnedBuffers& 
         return false;
     }
     auto& refs = structuredJniRefs();
-    buffers.streams = static_cast<jobjectArray>(env->GetObjectField(inputs, refs.streamsField));
-    if (buffers.streams == nullptr) {
+
+    jobject fieldIds = env->GetObjectField(inputs, refs.fieldIdsField);
+    if (!pinAccumulator(env, fieldIds, buffers.fieldIds, false)) {
+        return false;
+    }
+    jobject fieldTypes = env->GetObjectField(inputs, refs.fieldTypesField);
+    if (!pinAccumulator(env, fieldTypes, buffers.fieldTypes, false)) {
+        return false;
+    }
+    jobject fieldLengths = env->GetObjectField(inputs, refs.fieldLengthsField);
+    if (!pinAccumulator(env, fieldLengths, buffers.fieldLengths, false)) {
+        return false;
+    }
+
+    buffers.fields = static_cast<jobjectArray>(env->GetObjectField(inputs, refs.fieldsField));
+    if (buffers.fields == nullptr) {
         return !env->ExceptionCheck();
     }
-    for (size_t i = 0; i < openzl::protobuf::kNumInputs; ++i) {
-        jobject accumulator = env->GetObjectArrayElement(buffers.streams, static_cast<jsize>(i));
-        if (accumulator == nullptr) {
+    jint fieldCount = env->GetIntField(inputs, refs.fieldCountField);
+    if (fieldCount < 0) {
+        throwIllegalState(env, "Structured protobuf fieldCount must be non-negative");
+        return false;
+    }
+    buffers.valueStreams.reserve(static_cast<size_t>(fieldCount));
+    for (jsize i = 0; i < fieldCount; ++i) {
+        jobject fieldStream = env->GetObjectArrayElement(buffers.fields, i);
+        if (fieldStream == nullptr) {
             return false;
         }
-        buffers.accumulators[i] = accumulator;
-        jobject data = env->GetObjectField(accumulator, refs.dataField);
-        if (data == nullptr) {
+        StructuredPinnedField pinned;
+        pinned.fieldStream = fieldStream;
+        pinned.tag = env->GetIntField(fieldStream, refs.fieldStreamTagField);
+        pinned.kind = env->GetIntField(fieldStream, refs.fieldStreamKindField);
+        jobject data = env->GetObjectField(fieldStream, refs.fieldStreamDataField);
+        if (!pinAccumulator(env, data, pinned.data, false)) {
             return false;
         }
-        buffers.directBuffers[i] = data;
-        jint size = env->GetIntField(accumulator, refs.sizeField);
-        if (size < 0) {
-            throwIllegalState(env, "Structured protobuf input stream size must be non-negative");
+        jobject lengths = env->GetObjectField(fieldStream, refs.fieldStreamLengthsField);
+        if (!pinAccumulator(env, lengths, pinned.lengths, true)) {
             return false;
         }
-        buffers.sizes[i] = static_cast<size_t>(size);
-        if (buffers.sizes[i] == 0) {
-            buffers.addresses[i] = nullptr;
-            continue;
-        }
-        void* address = env->GetDirectBufferAddress(data);
-        if (address == nullptr) {
-            throwIllegalState(env, "Structured protobuf input buffer must be direct");
-            return false;
-        }
-        buffers.addresses[i] = static_cast<const unsigned char*>(address);
+        buffers.valueStreams.emplace_back(std::move(pinned));
     }
     return true;
 }
@@ -845,13 +1093,19 @@ void configureStructuredCCtx(openzl::CCtx& cctx)
 }
 
 struct StructuredSerializerCacheEntry {
+    openzl::Compressor compressor;
     openzl::CCtx cctx;
-    bool bound = false;
-    size_t appliedGeneration = 0;
+    bool initialized = false;
 
-    StructuredSerializerCacheEntry()
+    void initialize(const std::string& type)
     {
+        if (initialized) {
+            return;
+        }
+        compressor = createStructuredCompressorForType(type);
         configureStructuredCCtx(cctx);
+        cctx.refCompressor(compressor);
+        initialized = true;
     }
 };
 
@@ -860,21 +1114,19 @@ StructuredSerializerCacheEntry& structuredSerializerEntryForType(const std::stri
     thread_local std::unordered_map<std::string, StructuredSerializerCacheEntry> cache;
     auto [it, inserted] = cache.try_emplace(type);
     (void)inserted;
+    it->second.initialize(type);
     return it->second;
 }
 
 struct ExplicitStructuredCacheEntry {
-    openzl::protobuf::ProtoSerializer serializer;
+    openzl::Compressor compressor;
     openzl::CCtx cctx;
 
     explicit ExplicitStructuredCacheEntry(const std::string& serialized)
     {
-        openzl::Compressor trained;
-        trained.deserialize(serialized);
-        serializer.setCompressor(std::move(trained));
-        configureSerializer(serializer);
+        compressor.deserialize(serialized);
         configureStructuredCCtx(cctx);
-        cctx.refCompressor(*serializer.getCompressor());
+        cctx.refCompressor(compressor);
     }
 };
 
@@ -899,37 +1151,233 @@ ExplicitStructuredCacheEntry& explicitStructuredEntryForCompressor(
 
 std::vector<openzl::Input> buildStructuredInputs(const StructuredPinnedBuffers& buffers)
 {
+    thread_local std::vector<uint32_t> fieldIdsScratch;
+    thread_local std::vector<uint32_t> fieldTypesScratch;
+    thread_local std::vector<uint32_t> fieldLengthsScratch;
     std::vector<openzl::Input> inputs;
-    inputs.reserve(openzl::protobuf::kNumInputs);
-    for (size_t i = 0; i < openzl::protobuf::kNumInputs; ++i) {
-        const auto inputType = static_cast<openzl::protobuf::InputType>(i);
-        const void* ptr = buffers.sizes[i] == 0 ? nullptr : static_cast<const void*>(buffers.addresses[i]);
-        switch (inputType) {
-        case openzl::protobuf::InputType::FIELD_ID:
-        case openzl::protobuf::InputType::FIELD_TYPE:
-        case openzl::protobuf::InputType::FIELD_LENGTH:
-        case openzl::protobuf::InputType::INT32:
-        case openzl::protobuf::InputType::UINT32:
-        case openzl::protobuf::InputType::FLOAT:
-        case openzl::protobuf::InputType::ENUM:
-            inputs.emplace_back(openzl::Input::refNumeric(ptr, 4, buffers.sizes[i] / 4));
-            break;
-        case openzl::protobuf::InputType::INT64:
-        case openzl::protobuf::InputType::UINT64:
-        case openzl::protobuf::InputType::DOUBLE:
-            inputs.emplace_back(openzl::Input::refNumeric(ptr, 8, buffers.sizes[i] / 8));
-            break;
-        case openzl::protobuf::InputType::BOOL:
-            inputs.emplace_back(openzl::Input::refNumeric(ptr, 1, buffers.sizes[i]));
-            break;
-        case openzl::protobuf::InputType::STRING:
-            inputs.emplace_back(openzl::Input::refSerial(ptr, buffers.sizes[i]));
-            break;
-        case openzl::protobuf::InputType::INVALID:
-        default:
-            throw std::runtime_error("Unsupported structured protobuf input type");
+    inputs.reserve(3 + buffers.valueStreams.size());
+
+    auto addControl = [&inputs](const PinnedAccumulator& pinned,
+                                int tag,
+                                uint32_t controlKind,
+                                std::vector<uint32_t>& scratch) {
+        scratch.clear();
+        scratch.reserve(pinned.size / 4 + 2);
+        scratch.push_back(kStructuredControlMagic);
+        scratch.push_back(controlKind);
+        if (pinned.size != 0) {
+            auto const* values = reinterpret_cast<const uint32_t*>(pinned.address);
+            scratch.insert(scratch.end(), values, values + (pinned.size / 4));
         }
-        inputs.back().setIntMetadata(ZL_CLUSTERING_TAG_METADATA_ID, static_cast<int>(i));
+        auto input = openzl::Input::refNumeric(scratch.data(), 4, scratch.size());
+        input.setIntMetadata(ZL_CLUSTERING_TAG_METADATA_ID, tag);
+        inputs.emplace_back(std::move(input));
+    };
+    addControl(buffers.fieldIds, kStructuredFieldIdTag, kStructuredControlFieldIds, fieldIdsScratch);
+    addControl(buffers.fieldTypes, kStructuredFieldTypeTag, kStructuredControlFieldTypes, fieldTypesScratch);
+    addControl(buffers.fieldLengths, kStructuredFieldLengthTag, kStructuredControlFieldLengths, fieldLengthsScratch);
+
+    for (const auto& stream : buffers.valueStreams) {
+        openzl::Input input = [&stream]() {
+            switch (stream.kind) {
+                case 1:
+                case 3:
+                case 6:
+                case 8:
+                    return openzl::Input::refNumeric(stream.data.address, 4, stream.data.size / 4);
+                case 2:
+                case 4:
+                case 5:
+                    return openzl::Input::refNumeric(stream.data.address, 8, stream.data.size / 8);
+                case 7:
+                    return openzl::Input::refNumeric(stream.data.address, 1, stream.data.size);
+                case 9:
+                    return openzl::Input::refString(
+                            stream.data.address,
+                            stream.data.size,
+                            reinterpret_cast<const uint32_t*>(stream.lengths.address),
+                            stream.lengths.size / 4);
+                default:
+                    throw std::runtime_error("Unsupported structured protobuf logical field kind");
+            }
+        }();
+        input.setIntMetadata(ZL_CLUSTERING_TAG_METADATA_ID, stream.tag);
+        inputs.emplace_back(std::move(input));
+    }
+    return inputs;
+}
+
+struct StructuredSampleFieldStorage {
+    int tag = 0;
+    int kind = 0;
+    std::vector<uint32_t> values32;
+    std::vector<uint64_t> values64;
+    std::string bytes;
+    std::vector<uint32_t> lengths;
+};
+
+struct StructuredSampleStorage {
+    std::vector<uint32_t> fieldIds;
+    std::vector<uint32_t> fieldTypes;
+    std::vector<uint32_t> fieldLengths;
+    std::vector<StructuredSampleFieldStorage> valueStreams;
+};
+
+uint32_t readStructuredSampleUInt32(const unsigned char*& cursor, const unsigned char* end)
+{
+    if (static_cast<size_t>(end - cursor) < sizeof(uint32_t)) {
+        throw std::runtime_error("Structured protobuf sample is truncated");
+    }
+    uint32_t value = static_cast<uint32_t>(cursor[0])
+            | (static_cast<uint32_t>(cursor[1]) << 8)
+            | (static_cast<uint32_t>(cursor[2]) << 16)
+            | (static_cast<uint32_t>(cursor[3]) << 24);
+    cursor += sizeof(uint32_t);
+    return value;
+}
+
+uint64_t readStructuredSampleUInt64(const unsigned char*& cursor, const unsigned char* end)
+{
+    uint64_t lo = readStructuredSampleUInt32(cursor, end);
+    uint64_t hi = readStructuredSampleUInt32(cursor, end);
+    return lo | (hi << 32);
+}
+
+void requireStructuredSampleBytes(const unsigned char*& cursor, const unsigned char* end, size_t size)
+{
+    if (size > static_cast<size_t>(end - cursor)) {
+        throw std::runtime_error("Structured protobuf sample is truncated");
+    }
+}
+
+std::vector<uint32_t> readStructuredSampleUInt32Vector(const unsigned char*& cursor, const unsigned char* end, size_t byteSize)
+{
+    if (byteSize % sizeof(uint32_t) != 0) {
+        throw std::runtime_error("Structured protobuf control stream is misaligned");
+    }
+    requireStructuredSampleBytes(cursor, end, byteSize);
+    std::vector<uint32_t> out;
+    out.reserve(byteSize / sizeof(uint32_t));
+    for (size_t i = 0; i < byteSize; i += sizeof(uint32_t)) {
+        out.push_back(readStructuredSampleUInt32(cursor, end));
+    }
+    return out;
+}
+
+StructuredSampleStorage parseStructuredSample(const std::string& sample)
+{
+    const auto* cursor = reinterpret_cast<const unsigned char*>(sample.data());
+    const auto* end = cursor + sample.size();
+    StructuredSampleStorage storage;
+
+    uint32_t fieldIdsSize = readStructuredSampleUInt32(cursor, end);
+    uint32_t fieldTypesSize = readStructuredSampleUInt32(cursor, end);
+    uint32_t fieldLengthsSize = readStructuredSampleUInt32(cursor, end);
+    uint32_t fieldCount = readStructuredSampleUInt32(cursor, end);
+
+    storage.fieldIds = readStructuredSampleUInt32Vector(cursor, end, fieldIdsSize);
+    storage.fieldTypes = readStructuredSampleUInt32Vector(cursor, end, fieldTypesSize);
+    storage.fieldLengths = readStructuredSampleUInt32Vector(cursor, end, fieldLengthsSize);
+    storage.valueStreams.reserve(fieldCount);
+
+    for (uint32_t i = 0; i < fieldCount; ++i) {
+        StructuredSampleFieldStorage field;
+        field.tag = static_cast<int>(readStructuredSampleUInt32(cursor, end));
+        field.kind = static_cast<int>(readStructuredSampleUInt32(cursor, end));
+        uint32_t dataSize = readStructuredSampleUInt32(cursor, end);
+        uint32_t lengthsSize = readStructuredSampleUInt32(cursor, end);
+        requireStructuredSampleBytes(cursor, end, dataSize + lengthsSize);
+
+        switch (field.kind) {
+            case 1:
+            case 3:
+            case 6:
+            case 8:
+                field.values32 = readStructuredSampleUInt32Vector(cursor, end, dataSize);
+                break;
+            case 2:
+            case 4:
+            case 5: {
+                if (dataSize % sizeof(uint64_t) != 0) {
+                    throw std::runtime_error("Structured protobuf 64-bit stream is misaligned");
+                }
+                field.values64.reserve(dataSize / sizeof(uint64_t));
+                for (size_t consumed = 0; consumed < dataSize; consumed += sizeof(uint64_t)) {
+                    field.values64.push_back(readStructuredSampleUInt64(cursor, end));
+                }
+                break;
+            }
+            case 7:
+                field.bytes.assign(reinterpret_cast<const char*>(cursor), dataSize);
+                cursor += dataSize;
+                break;
+            case 9:
+                field.bytes.assign(reinterpret_cast<const char*>(cursor), dataSize);
+                cursor += dataSize;
+                field.lengths = readStructuredSampleUInt32Vector(cursor, end, lengthsSize);
+                break;
+            default:
+                throw std::runtime_error("Unsupported structured protobuf logical field kind");
+        }
+        if (field.kind != 9 && lengthsSize != 0) {
+            throw std::runtime_error("Structured protobuf non-string field has lengths payload");
+        }
+        storage.valueStreams.emplace_back(std::move(field));
+    }
+
+    if (cursor != end) {
+        throw std::runtime_error("Structured protobuf sample contains trailing bytes");
+    }
+    return storage;
+}
+
+std::vector<openzl::Input> buildStructuredInputs(const StructuredSampleStorage& storage)
+{
+    thread_local std::vector<uint32_t> fieldIdsScratch;
+    thread_local std::vector<uint32_t> fieldTypesScratch;
+    thread_local std::vector<uint32_t> fieldLengthsScratch;
+    std::vector<openzl::Input> inputs;
+    inputs.reserve(3 + storage.valueStreams.size());
+
+    auto addControl = [&inputs](const std::vector<uint32_t>& values,
+                                int tag,
+                                uint32_t controlKind,
+                                std::vector<uint32_t>& scratch) {
+        scratch.clear();
+        scratch.reserve(values.size() + 2);
+        scratch.push_back(kStructuredControlMagic);
+        scratch.push_back(controlKind);
+        scratch.insert(scratch.end(), values.begin(), values.end());
+        auto input = openzl::Input::refNumeric(scratch.data(), 4, scratch.size());
+        input.setIntMetadata(ZL_CLUSTERING_TAG_METADATA_ID, tag);
+        inputs.emplace_back(std::move(input));
+    };
+    addControl(storage.fieldIds, kStructuredFieldIdTag, kStructuredControlFieldIds, fieldIdsScratch);
+    addControl(storage.fieldTypes, kStructuredFieldTypeTag, kStructuredControlFieldTypes, fieldTypesScratch);
+    addControl(storage.fieldLengths, kStructuredFieldLengthTag, kStructuredControlFieldLengths, fieldLengthsScratch);
+
+    for (const auto& field : storage.valueStreams) {
+        openzl::Input input = [&field]() {
+            switch (field.kind) {
+                case 1:
+                case 3:
+                case 6:
+                case 8:
+                    return openzl::Input::refNumeric(field.values32.data(), 4, field.values32.size());
+                case 2:
+                case 4:
+                case 5:
+                    return openzl::Input::refNumeric(field.values64.data(), 8, field.values64.size());
+                case 7:
+                    return openzl::Input::refNumeric(field.bytes.data(), 1, field.bytes.size());
+                case 9:
+                    return openzl::Input::refString(field.bytes.data(), field.bytes.size(), field.lengths.data(), field.lengths.size());
+                default:
+                    throw std::runtime_error("Unsupported structured protobuf logical field kind");
+            }
+        }();
+        input.setIntMetadata(ZL_CLUSTERING_TAG_METADATA_ID, field.tag);
+        inputs.emplace_back(std::move(input));
     }
     return inputs;
 }
@@ -963,13 +1411,7 @@ jbyteArray compressStructuredPayload(
             auto& entry = explicitStructuredEntryForCompressor(typeName, serialized);
             result = entry.cctx.compress(inputs);
         } else {
-            auto& serializerEntry = serializerEntryForType(typeName);
             auto& structuredEntry = structuredSerializerEntryForType(typeName);
-            if (!structuredEntry.bound || structuredEntry.appliedGeneration != serializerEntry.appliedGeneration) {
-                structuredEntry.cctx.refCompressor(*serializerEntry.serializer.getCompressor());
-                structuredEntry.bound = true;
-                structuredEntry.appliedGeneration = serializerEntry.appliedGeneration;
-            }
             result = structuredEntry.cctx.compress(inputs);
         }
         const auto compressEnd = std::chrono::steady_clock::now();
@@ -985,6 +1427,384 @@ jbyteArray compressStructuredPayload(
         return out;
     } catch (const std::exception& ex) {
         releaseStructuredPinnedBuffers(env, buffers);
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
+
+struct OwnedStructuredOutput {
+    openzl::Type type = openzl::Type::Serial;
+    size_t eltWidth = 0;
+    size_t numElts = 0;
+    std::vector<char> bytes;
+    std::vector<uint32_t> stringLengths;
+    bool hasTag = false;
+    int tag = 0;
+};
+
+OwnedStructuredOutput copyStructuredOutput(const openzl::Output& output)
+{
+    OwnedStructuredOutput owned;
+    owned.type = output.type();
+    owned.bytes.resize(output.contentSize());
+    if (!owned.bytes.empty()) {
+        std::memcpy(owned.bytes.data(), output.ptr(), owned.bytes.size());
+    }
+    auto maybeTag = output.getIntMetadata(ZL_CLUSTERING_TAG_METADATA_ID);
+    owned.hasTag = maybeTag.has_value();
+    owned.tag = maybeTag.has_value() ? *maybeTag : 0;
+    if (owned.type == openzl::Type::String) {
+        owned.numElts = output.numElts();
+        auto const* lengths = output.stringLens();
+        owned.stringLengths.assign(lengths, lengths + owned.numElts);
+    } else {
+        owned.eltWidth = output.eltWidth();
+        owned.numElts = output.numElts();
+    }
+    return owned;
+}
+
+struct StructuredValueCursor {
+    OwnedStructuredOutput output;
+    openzl::protobuf::StringReader data;
+    size_t stringIndex = 0;
+
+    explicit StructuredValueCursor(OwnedStructuredOutput&& value)
+            : output(std::move(value))
+            , data(std::string_view(output.bytes.data(), output.bytes.size()))
+    {
+    }
+};
+
+struct StructuredDecodedFrame {
+    std::unique_ptr<StructuredValueCursor> fieldIds;
+    std::unique_ptr<StructuredValueCursor> fieldTypes;
+    std::unique_ptr<StructuredValueCursor> fieldLengths;
+    std::unordered_map<int, std::unique_ptr<StructuredValueCursor>> values;
+    std::deque<std::unique_ptr<StructuredValueCursor>> orderedValues;
+};
+
+void stripStructuredControlHeader(StructuredValueCursor& cursor)
+{
+    uint32_t magic = 0;
+    uint32_t kind = 0;
+    cursor.data.readLE(magic);
+    cursor.data.readLE(kind);
+    if (magic != kStructuredControlMagic) {
+        throw std::runtime_error("Structured control stream missing magic header");
+    }
+}
+
+bool tryAssignStructuredControl(StructuredDecodedFrame& frame, std::unique_ptr<StructuredValueCursor>& cursor)
+{
+    if (cursor == nullptr || cursor->output.bytes.size() < 2 * sizeof(uint32_t)) {
+        return false;
+    }
+    auto const* words = reinterpret_cast<const uint32_t*>(cursor->output.bytes.data());
+    if (words[0] != kStructuredControlMagic) {
+        return false;
+    }
+    stripStructuredControlHeader(*cursor);
+    switch (words[1]) {
+        case kStructuredControlFieldIds:
+            frame.fieldIds = std::move(cursor);
+            return true;
+        case kStructuredControlFieldTypes:
+            frame.fieldTypes = std::move(cursor);
+            return true;
+        case kStructuredControlFieldLengths:
+            frame.fieldLengths = std::move(cursor);
+            return true;
+        default:
+            throw std::runtime_error("Unknown structured control stream kind");
+    }
+}
+
+template <typename T>
+void readLE(openzl::protobuf::StringReader& reader, T& value)
+{
+    reader.readLE(value);
+}
+
+uint32_t readLengthControl(StructuredDecodedFrame& frame)
+{
+    uint32_t value = 0;
+    readLE(frame.fieldLengths->data, value);
+    return value;
+}
+
+std::string readStringValue(StructuredValueCursor& cursor, uint32_t expectedLength)
+{
+    if (cursor.output.type != openzl::Type::String) {
+        throw std::runtime_error("Structured field stream is not string-typed");
+    }
+    uint32_t actualLength = cursor.output.stringLengths[cursor.stringIndex++];
+    if (actualLength != expectedLength) {
+        throw std::runtime_error("Structured field stream length mismatch");
+    }
+    std::string value;
+    cursor.data.read(value, actualLength);
+    return value;
+}
+
+template <openzl::protobuf::InputType Type>
+size_t readStructuredValue(
+        typename openzl::protobuf::InputTraits<Type>::type& value,
+        StructuredValueCursor& cursor,
+        StructuredDecodedFrame& frame)
+{
+    using T = typename openzl::protobuf::InputTraits<Type>::type;
+    if constexpr (std::is_same_v<T, std::string>) {
+        uint32_t len = readLengthControl(frame);
+        value = readStringValue(cursor, len);
+        return static_cast<size_t>(len) + sizeof(uint32_t);
+    } else {
+        cursor.data.readLE(value);
+        return sizeof(T);
+    }
+}
+
+struct ReadStructuredField {
+    template <openzl::protobuf::InputType Type>
+    size_t operator()(
+            const openzl::protobuf::Reflection* ref,
+            openzl::protobuf::Message& message,
+            const openzl::protobuf::FieldDescriptor* field,
+            StructuredValueCursor& cursor,
+            StructuredDecodedFrame& frame)
+    {
+        using T = typename openzl::protobuf::InputTraits<Type>::type;
+        size_t total = 0;
+        if (!field->is_repeated()) {
+            T value{};
+            total += readStructuredValue<Type>(value, cursor, frame);
+            (ref->*openzl::protobuf::InputTraits<Type>::Set)(&message, field, std::move(value));
+        } else {
+            uint32_t count = readLengthControl(frame);
+            total += sizeof(uint32_t);
+            auto repeated = ref->GetMutableRepeatedFieldRef<T>(&message, field);
+            for (uint32_t i = 0; i < count; ++i) {
+                T value{};
+                total += readStructuredValue<Type>(value, cursor, frame);
+                repeated.Add(std::move(value));
+            }
+        }
+        return total;
+    }
+};
+
+StructuredValueCursor& requireStructuredCursor(StructuredDecodedFrame& frame, int tag)
+{
+    auto it = frame.values.find(tag);
+    if (it != frame.values.end()) {
+        return *it->second;
+    }
+    if (frame.orderedValues.empty()) {
+        throw std::runtime_error("Missing structured field stream for tag " + std::to_string(tag));
+    }
+    auto cursor = std::move(frame.orderedValues.front());
+    frame.orderedValues.pop_front();
+    auto inserted = frame.values.emplace(tag, std::move(cursor));
+    return *inserted.first->second;
+}
+
+size_t readStructuredMessage(
+        openzl::protobuf::Message& message,
+        StructuredDecodedFrame& frame,
+        uint32_t pathHash)
+{
+    const auto ref = message.GetReflection();
+    const auto desc = message.GetDescriptor();
+    size_t total = 0;
+    while (!frame.fieldTypes->data.atEnd()) {
+        uint32_t fieldType = 0;
+        readLE(frame.fieldTypes->data, fieldType);
+        total += sizeof(uint32_t);
+        if (fieldType == openzl::protobuf::kStop) {
+            return total;
+        }
+
+        uint32_t fieldId = 0;
+        readLE(frame.fieldIds->data, fieldId);
+        total += sizeof(uint32_t);
+
+        auto* field = desc->FindFieldByNumber(static_cast<int>(fieldId));
+        if (field == nullptr) {
+            throw std::runtime_error("Unknown field id in structured protobuf payload");
+        }
+        if (fieldType != static_cast<uint32_t>(field->cpp_type())) {
+            throw std::runtime_error("Structured protobuf field type mismatch");
+        }
+
+        if (fieldType == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) {
+            uint32_t childHash = structuredExtendPathHash(pathHash, fieldId);
+            if (!field->is_repeated()) {
+                auto* nested = ref->MutableMessage(&message, field);
+                total += readStructuredMessage(*nested, frame, childHash);
+            } else {
+                uint32_t count = readLengthControl(frame);
+                total += sizeof(uint32_t);
+                for (uint32_t i = 0; i < count; ++i) {
+                    auto* nested = ref->AddMessage(&message, field);
+                    total += readStructuredMessage(*nested, frame, childHash);
+                }
+            }
+            continue;
+        }
+
+        int tag = structuredFieldTag(pathHash, fieldId);
+        auto& cursor = requireStructuredCursor(frame, tag);
+        total += openzl::protobuf::call(
+                openzl::protobuf::CPPTypeToInputType[fieldType],
+                ReadStructuredField{},
+                ref,
+                message,
+                field,
+                cursor,
+                frame);
+    }
+    return total;
+}
+
+StructuredDecodedFrame decodeStructuredFrame(const std::string& compressed)
+{
+    struct OutputDebugInfo {
+        int type = 0;
+        size_t width = 0;
+        size_t elts = 0;
+        size_t size = 0;
+        bool hasTag = false;
+        int tag = 0;
+        bool hasWords = false;
+        uint32_t word0 = 0;
+        uint32_t word1 = 0;
+    };
+
+    openzl::DCtx dctx;
+    auto outputs = dctx.decompress(compressed);
+    std::vector<OutputDebugInfo> debugOutputs;
+    debugOutputs.reserve(outputs.size());
+    for (auto const& output : outputs) {
+        OutputDebugInfo info;
+        auto type = output.type();
+        info.type = static_cast<int>(type);
+        info.size = output.contentSize();
+        if (type != openzl::Type::String) {
+            info.width = output.eltWidth();
+            info.elts = output.numElts();
+        }
+        auto tag = output.getIntMetadata(ZL_CLUSTERING_TAG_METADATA_ID);
+        info.hasTag = tag.has_value();
+        info.tag = tag.has_value() ? *tag : 0;
+        if (type == openzl::Type::Numeric && output.eltWidth() == 4 && output.numElts() >= 2) {
+            auto const* words = static_cast<const uint32_t*>(output.ptr());
+            info.hasWords = true;
+            info.word0 = words[0];
+            info.word1 = words[1];
+        }
+        debugOutputs.push_back(info);
+    }
+    StructuredDecodedFrame frame;
+    for (auto& output : outputs) {
+        auto owned = copyStructuredOutput(output);
+        if (!owned.hasTag && owned.bytes.size() >= 2 * sizeof(uint32_t)) {
+            auto const* words = reinterpret_cast<const uint32_t*>(owned.bytes.data());
+            if (words[0] == kStructuredControlMagic) {
+                auto cursor = std::make_unique<StructuredValueCursor>(std::move(owned));
+                stripStructuredControlHeader(*cursor);
+                switch (words[1]) {
+                    case kStructuredControlFieldIds:
+                        frame.fieldIds = std::move(cursor);
+                        break;
+                    case kStructuredControlFieldTypes:
+                        frame.fieldTypes = std::move(cursor);
+                        break;
+                    case kStructuredControlFieldLengths:
+                        frame.fieldLengths = std::move(cursor);
+                        break;
+                    default:
+                        throw std::runtime_error("Unknown structured control stream kind");
+                }
+                continue;
+            }
+        }
+
+        auto cursor = std::make_unique<StructuredValueCursor>(std::move(owned));
+        if (!cursor->output.hasTag) {
+            if (tryAssignStructuredControl(frame, cursor)) {
+                continue;
+            }
+            frame.orderedValues.emplace_back(std::move(cursor));
+            continue;
+        }
+        int tag = cursor->output.tag;
+        if (tag == kStructuredFieldIdTag) {
+            stripStructuredControlHeader(*cursor);
+            frame.fieldIds = std::move(cursor);
+        } else if (tag == kStructuredFieldTypeTag) {
+            stripStructuredControlHeader(*cursor);
+            frame.fieldTypes = std::move(cursor);
+        } else if (tag == kStructuredFieldLengthTag) {
+            stripStructuredControlHeader(*cursor);
+            frame.fieldLengths = std::move(cursor);
+        } else {
+            frame.values.emplace(tag, std::move(cursor));
+        }
+    }
+    for (auto it = frame.orderedValues.begin(); it != frame.orderedValues.end();) {
+        if (tryAssignStructuredControl(frame, *it)) {
+            it = frame.orderedValues.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (!frame.fieldIds || !frame.fieldTypes || !frame.fieldLengths) {
+        std::string details = "Structured frame missing control streams outputs=" + std::to_string(outputs.size())
+                + " ordered=" + std::to_string(frame.orderedValues.size())
+                + " ids=" + std::to_string(frame.fieldIds ? 1 : 0)
+                + " types=" + std::to_string(frame.fieldTypes ? 1 : 0)
+                + " lengths=" + std::to_string(frame.fieldLengths ? 1 : 0);
+        size_t limit = std::min<size_t>(debugOutputs.size(), 8);
+        for (size_t i = 0; i < limit; ++i) {
+            auto const& output = debugOutputs[i];
+            details += " | out[" + std::to_string(i)
+                    + "] type=" + std::to_string(output.type)
+                    + " width=" + std::to_string(output.width)
+                    + " elts=" + std::to_string(output.elts)
+                    + " size=" + std::to_string(output.size)
+                    + " tag=" + std::to_string(output.tag)
+                    + " present=" + std::to_string(output.hasTag ? 1 : 0);
+            if (output.hasWords) {
+                char wordsBuf[64];
+                std::snprintf(wordsBuf, sizeof(wordsBuf), " first=[0x%08x,0x%08x]", output.word0, output.word1);
+                details += wordsBuf;
+            }
+        }
+        throw std::runtime_error(details);
+    }
+    return frame;
+}
+
+jbyteArray decompressStructuredPayload(
+        JNIEnv* env,
+        jbyteArray payload,
+        const std::string& typeName)
+{
+    try {
+        std::string compressed = copyArray(env, payload);
+        if (env->ExceptionCheck()) {
+            return nullptr;
+        }
+        auto frame = decodeStructuredFrame(compressed);
+        google::protobuf::Message& message = reusableMessage(typeName);
+        message.Clear();
+        readStructuredMessage(message, frame, kStructuredRootPathHash);
+        std::string proto;
+        if (!message.SerializeToString(&proto)) {
+            throw std::runtime_error("Failed to serialize structured protobuf message");
+        }
+        return makeByteArray(env, proto);
+    } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
         return nullptr;
     }
@@ -1274,6 +2094,259 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLStructured
     }
 
     return compressStructuredPayload(env, structuredInputs, compressorBytes, typeName);
+}
+
+extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_compressStructuredIntoNative(
+        JNIEnv* env,
+        jclass,
+        jobject structuredInputs,
+        jbyteArray compressorBytes,
+        jstring messageType,
+        jobject outputBuffer,
+        jint outputPosition,
+        jint outputLength)
+{
+    if (structuredInputs == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "inputs");
+        return 0;
+    }
+    if (outputBuffer == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "output");
+        return 0;
+    }
+    if (outputPosition < 0 || outputLength < 0) {
+        throwIllegalArgument(env, "output position/length must be non-negative");
+        return 0;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return 0;
+    }
+
+    if (!DescriptorRegistry::instance().hasType(typeName)) {
+        throwIllegalArgument(env, "Unknown protobuf message type: " + typeName);
+        return 0;
+    }
+
+    StructuredPinnedBuffers buffers;
+    const auto pinStart = std::chrono::steady_clock::now();
+    if (!pinStructuredBuffers(env, structuredInputs, buffers)) {
+        releaseStructuredPinnedBuffers(env, buffers);
+        return 0;
+    }
+    const auto pinEnd = std::chrono::steady_clock::now();
+
+    try {
+        const auto buildStart = std::chrono::steady_clock::now();
+        auto inputs = buildStructuredInputs(buffers);
+        const auto buildEnd = std::chrono::steady_clock::now();
+
+        std::string result;
+        const auto compressStart = std::chrono::steady_clock::now();
+        if (compressorBytes != nullptr) {
+            std::string serialized = copyArray(env, compressorBytes);
+            if (env->ExceptionCheck()) {
+                releaseStructuredPinnedBuffers(env, buffers);
+                return 0;
+            }
+            auto& entry = explicitStructuredEntryForCompressor(typeName, serialized);
+            result = entry.cctx.compress(inputs);
+        } else {
+            auto& structuredEntry = structuredSerializerEntryForType(typeName);
+            result = structuredEntry.cctx.compress(inputs);
+        }
+        const auto compressEnd = std::chrono::steady_clock::now();
+
+        releaseStructuredPinnedBuffers(env, buffers);
+
+        const auto outStart = std::chrono::steady_clock::now();
+        jint written = writeDirectBuffer(env, outputBuffer, outputPosition, outputLength, result);
+        const auto outEnd = std::chrono::steady_clock::now();
+        if (!env->ExceptionCheck() && written >= 0) {
+            recordStructuredPerf(
+                    static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(pinEnd - pinStart).count()),
+                    static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(buildEnd - buildStart).count()),
+                    static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(compressEnd - compressStart).count()),
+                    static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(outEnd - outStart).count()));
+        }
+        return written;
+    } catch (const std::exception& ex) {
+        releaseStructuredPinnedBuffers(env, buffers);
+        throwIllegalState(env, ex.what());
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_decompressStructuredNative(
+        JNIEnv* env,
+        jclass,
+        jbyteArray payload,
+        jstring messageType)
+{
+    if (payload == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "payload");
+        return nullptr;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    if (!DescriptorRegistry::instance().hasType(typeName)) {
+        throwIllegalArgument(env, "Unknown protobuf message type: " + typeName);
+        return nullptr;
+    }
+
+    return decompressStructuredPayload(env, payload, typeName);
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_trainStructuredNative(
+        JNIEnv* env,
+        jclass,
+        jobjectArray samples,
+        jint maxTimeSecs,
+        jint threads,
+        jint numSamples,
+        jboolean pareto,
+        jstring messageType)
+{
+    if (samples == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "samples");
+        return nullptr;
+    }
+
+    jsize count = env->GetArrayLength(samples);
+    if (count == 0) {
+        throwIllegalArgument(env, "samples must not be empty");
+        return nullptr;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+    if (!DescriptorRegistry::instance().hasType(typeName)) {
+        throwIllegalArgument(env, "Unknown protobuf message type: " + typeName);
+        return nullptr;
+    }
+
+    try {
+        openzl::Compressor baseCompressor = createStructuredCompressorForType(typeName);
+        std::vector<StructuredSampleStorage> storages;
+        storages.reserve(static_cast<size_t>(count));
+        std::vector<openzl::training::MultiInput> multiInputs;
+        multiInputs.reserve(static_cast<size_t>(count));
+
+        for (jsize idx = 0; idx < count; ++idx) {
+            auto sample = static_cast<jbyteArray>(env->GetObjectArrayElement(samples, idx));
+            if (sample == nullptr) {
+                throwNew(env, JniRefs().nullPointerException, "samples element");
+                return nullptr;
+            }
+            std::string payload = copyArray(env, sample);
+            env->DeleteLocalRef(sample);
+            storages.emplace_back(parseStructuredSample(payload));
+            auto inputs = buildStructuredInputs(storages.back());
+            openzl::training::MultiInput multi;
+            for (auto& input : inputs) {
+                multi.add(std::move(input));
+            }
+            multiInputs.emplace_back(std::move(multi));
+        }
+
+        openzl::training::TrainParams params;
+        if (threads > 0) {
+            params.threads = static_cast<uint32_t>(threads);
+        }
+        if (numSamples > 0) {
+            params.numSamples = static_cast<size_t>(numSamples);
+        }
+        if (maxTimeSecs > 0) {
+            params.maxTimeSecs = static_cast<size_t>(maxTimeSecs);
+        }
+        params.paretoFrontier = pareto != JNI_FALSE;
+        params.compressorGenFunc = [typeName](openzl::poly::string_view serialized) {
+            auto up = std::make_unique<openzl::Compressor>(createStructuredCompressorForType(typeName));
+            up->deserialize(serialized);
+            return up;
+        };
+
+        auto trained = openzl::training::train(multiInputs, baseCompressor, params);
+
+        jclass byteArrClass = env->FindClass("[B");
+        if (!byteArrClass) {
+            return nullptr;
+        }
+        jobjectArray out = env->NewObjectArray(static_cast<jsize>(trained.size()), byteArrClass, nullptr);
+        if (out == nullptr) {
+            return nullptr;
+        }
+        for (size_t i = 0; i < trained.size(); ++i) {
+            const std::string_view& sv = *trained[i];
+            jbyteArray elem = env->NewByteArray(static_cast<jsize>(sv.size()));
+            if (elem == nullptr) {
+                return nullptr;
+            }
+            if (!sv.empty()) {
+                env->SetByteArrayRegion(elem, 0, static_cast<jsize>(sv.size()), reinterpret_cast<const jbyte*>(sv.data()));
+            }
+            env->SetObjectArrayElement(out, static_cast<jsize>(i), elem);
+            env->DeleteLocalRef(elem);
+        }
+        return out;
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLStructuredProtoBridge_compressStructuredSampleNative(
+        JNIEnv* env,
+        jclass,
+        jbyteArray sample,
+        jbyteArray compressorBytes,
+        jstring messageType)
+{
+    if (sample == nullptr) {
+        throwNew(env, JniRefs().nullPointerException, "sample");
+        return nullptr;
+    }
+
+    std::string typeName = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+    if (!DescriptorRegistry::instance().hasType(typeName)) {
+        throwIllegalArgument(env, "Unknown protobuf message type: " + typeName);
+        return nullptr;
+    }
+
+    try {
+        std::string payload = copyArray(env, sample);
+        if (env->ExceptionCheck()) {
+            return nullptr;
+        }
+        StructuredSampleStorage storage = parseStructuredSample(payload);
+        auto inputs = buildStructuredInputs(storage);
+        std::string result;
+        if (compressorBytes != nullptr) {
+            std::string serialized = copyArray(env, compressorBytes);
+            if (env->ExceptionCheck()) {
+                return nullptr;
+            }
+            auto& entry = explicitStructuredEntryForCompressor(typeName, serialized);
+            result = entry.cctx.compress(inputs);
+        } else {
+            auto& structuredEntry = structuredSerializerEntryForType(typeName);
+            result = structuredEntry.cctx.compress(inputs);
+        }
+        return makeByteArray(env, result);
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
 }
 
 extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertDirectIntoNative(
