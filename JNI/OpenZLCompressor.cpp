@@ -12,105 +12,11 @@
 #include "tools/training/utils/utils.h"
 #include "tools/training/train.h"
 #include <cstdio>
-#include <chrono>
-#include <filesystem>
-#include <fstream>
 #include <limits>
 #include <memory>
 #include <new>
 #include <stdexcept>
 #include <string>
-
-namespace {
-
-jobjectArray trainFromDirectoryImpl(JNIEnv* env,
-        const std::string& profile,
-        const std::string& dir,
-        jint maxTimeSecs,
-        jint threads,
-        jint numSamples,
-        jboolean pareto)
-{
-    const auto& profiles = openzl::cli::compressProfiles();
-    auto it = profiles.find(profile);
-    if (it == profiles.end()) {
-        std::string message = "Unknown compression profile: " + profile;
-        throwIllegalArgument(env, message);
-        return nullptr;
-    }
-
-    try {
-        openzl::tools::io::InputSetDir set(dir, false);
-        std::vector<openzl::training::MultiInput> multi;
-        for (const auto& inp : set) {
-            openzl::training::MultiInput mi;
-            mi.add(inp);
-            multi.emplace_back(std::move(mi));
-        }
-
-        openzl::Compressor compressor;
-        openzl::cli::ProfileArgs args;
-        args.name = profile;
-        auto* profilePtr = it->second.get();
-        ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
-        compressor.selectStartingGraph(gid);
-
-        openzl::training::TrainParams params;
-        if (threads > 0) {
-            params.threads = static_cast<uint32_t>(threads);
-        }
-        if (numSamples > 0) {
-            params.numSamples = static_cast<size_t>(numSamples);
-        }
-        if (maxTimeSecs > 0) {
-            params.maxTimeSecs = static_cast<size_t>(maxTimeSecs);
-        }
-        params.paretoFrontier = pareto != JNI_FALSE;
-
-        params.compressorGenFunc = [profilePtr, args](openzl::poly::string_view serialized) -> std::unique_ptr<openzl::Compressor> {
-            auto up = std::make_unique<openzl::Compressor>();
-            try {
-                ZL_GraphID gid = profilePtr->gen(up->get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
-                up->selectStartingGraph(gid);
-            } catch (...) {
-            }
-            up->deserialize(serialized);
-            return up;
-        };
-
-        auto trained = openzl::training::train(multi, compressor, params);
-
-        jclass byteArrClass = env->FindClass("[B");
-        if (!byteArrClass) {
-            return nullptr;
-        }
-        jobjectArray out = env->NewObjectArray(static_cast<jsize>(trained.size()), byteArrClass, nullptr);
-        if (out == nullptr) {
-            return nullptr;
-        }
-        for (size_t i = 0; i < trained.size(); ++i) {
-            const std::string_view& sv = *trained[i];
-            jbyteArray ba = env->NewByteArray(static_cast<jsize>(sv.size()));
-            if (ba == nullptr) {
-                return nullptr;
-            }
-            if (sv.size() > 0) {
-                env->SetByteArrayRegion(ba, 0, static_cast<jsize>(sv.size()), reinterpret_cast<const jbyte*>(sv.data()));
-            }
-            env->SetObjectArrayElement(out, static_cast<jsize>(i), ba);
-            env->DeleteLocalRef(ba);
-        }
-        return out;
-    } catch (const openzl::cli::InvalidArgsException& ex) {
-        throwIllegalArgument(env, ex.what());
-        return nullptr;
-    } catch (const std::exception& ex) {
-        throwIllegalState(env, ex.what());
-        return nullptr;
-    }
-}
-
-} // namespace
 
 extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_nativeCreate(JNIEnv*, jobject, jint graphOrdinal)
 {
@@ -432,95 +338,82 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompress
     std::string dir(dirChars);
     env->ReleaseStringUTFChars(dirPath, dirChars);
 
-    return trainFromDirectoryImpl(env, profile, dir, maxTimeSecs, threads, numSamples, pareto);
-}
-
-extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainNative(JNIEnv* env,
-        jclass,
-        jstring profileName,
-        jobjectArray inputs,
-        jint maxTimeSecs,
-        jint threads,
-        jint numSamples,
-        jboolean pareto)
-{
-    if (profileName == nullptr) {
-        throwNew(env, JniRefs().nullPointerException, "profileName");
-        return nullptr;
-    }
-    if (inputs == nullptr) {
-        throwNew(env, JniRefs().nullPointerException, "inputs");
+    const auto& profiles = openzl::cli::compressProfiles();
+    auto it = profiles.find(profile);
+    if (it == profiles.end()) {
+        std::string message = "Unknown compression profile: " + profile;
+        throwIllegalArgument(env, message);
         return nullptr;
     }
 
-    const char* profileChars = env->GetStringUTFChars(profileName, nullptr);
-    if (profileChars == nullptr) {
-        throwNew(env, JniRefs().outOfMemoryError, "Unable to access profileName");
-        return nullptr;
-    }
-    std::string profile(profileChars);
-    env->ReleaseStringUTFChars(profileName, profileChars);
-
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    fs::path tmpDir = fs::temp_directory_path(ec);
-    if (ec) {
-        throwIllegalState(env, "Unable to resolve temporary directory");
-        return nullptr;
-    }
-    tmpDir /= fs::path("openzl-train-native-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    if (!fs::create_directories(tmpDir, ec) || ec) {
-        throwIllegalState(env, "Unable to create temporary training directory");
-        return nullptr;
-    }
-
-    jobjectArray result = nullptr;
-    jsize count = env->GetArrayLength(inputs);
-    for (jsize i = 0; i < count; ++i) {
-        auto* arr = static_cast<jbyteArray>(env->GetObjectArrayElement(inputs, i));
-        if (arr == nullptr) {
-            arr = env->NewByteArray(0);
+    try {
+        // Build InputSetDir and convert to MultiInput vector by iterating
+        openzl::tools::io::InputSetDir set(dir, false);
+        std::vector<openzl::training::MultiInput> multi;
+        for (const auto& inp : set) {
+            openzl::training::MultiInput mi;
+            mi.add(inp);
+            multi.emplace_back(std::move(mi));
         }
-        if (arr == nullptr) {
-            throwNew(env, JniRefs().outOfMemoryError, "Unable to allocate empty input");
-            goto cleanup;
-        }
-        jsize len = env->GetArrayLength(arr);
-        std::string content;
-        content.resize(static_cast<size_t>(len));
-        if (len > 0) {
-            env->GetByteArrayRegion(arr, 0, len, reinterpret_cast<jbyte*>(content.data()));
-            if (env->ExceptionCheck()) {
-                env->DeleteLocalRef(arr);
-                goto cleanup;
+
+        // Create a compressor using profile generator
+        openzl::Compressor compressor;
+        openzl::cli::ProfileArgs args;
+        args.name = profile;
+        auto* profilePtr = it->second.get();
+        ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
+        compressor.selectStartingGraph(gid);
+
+        openzl::training::TrainParams params;
+        if (threads > 0) params.threads = static_cast<uint32_t>(threads);
+        if (numSamples > 0) params.numSamples = static_cast<size_t>(numSamples);
+        if (maxTimeSecs > 0) params.maxTimeSecs = static_cast<size_t>(maxTimeSecs);
+        params.paretoFrontier = pareto != JNI_FALSE;
+
+        // compressorGenFunc: create a new Compressor and initialize it with the
+        // same profile so any prerequisite components are registered before
+        // attempting to deserialize the serialized compressor. This prevents
+        // deserialization errors where a serialized compressor depends on
+        // components that are not pre-registered.
+        params.compressorGenFunc = [profilePtr, args] (openzl::poly::string_view serialized) -> std::unique_ptr<openzl::Compressor> {
+            auto up = std::make_unique<openzl::Compressor>();
+            // Apply profile generator to register components/graphs expected by
+            // deserialized compressors.
+            try {
+                ZL_GraphID gid = profilePtr->gen(up->get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
+                up->selectStartingGraph(gid);
+            } catch (...) {
+                // If profile initialization fails, still attempt deserialize so
+                // the caller gets the original error context.
             }
-        }
-        env->DeleteLocalRef(arr);
+            up->deserialize(serialized);
+            return up;
+        };
 
-        fs::path filePath = tmpDir / std::to_string(static_cast<int>(i));
-        std::ofstream out(filePath, std::ios::binary);
-        if (!out) {
-            throwIllegalState(env, "Unable to create temporary training file");
-            goto cleanup;
+        auto trained = openzl::training::train(multi, compressor, params);
+
+        jclass byteArrClass = env->FindClass("[B");
+        if (!byteArrClass) return nullptr;
+        jobjectArray out = env->NewObjectArray(static_cast<jsize>(trained.size()), byteArrClass, nullptr);
+        if (out == nullptr) return nullptr;
+        for (size_t i = 0; i < trained.size(); ++i) {
+            const std::string_view& sv = *trained[i];
+            jbyteArray ba = env->NewByteArray(static_cast<jsize>(sv.size()));
+            if (ba == nullptr) return nullptr;
+            if (sv.size() > 0) {
+                env->SetByteArrayRegion(ba, 0, static_cast<jsize>(sv.size()), reinterpret_cast<const jbyte*>(sv.data()));
+            }
+            env->SetObjectArrayElement(out, static_cast<jsize>(i), ba);
+            env->DeleteLocalRef(ba);
         }
-        out.write(content.data(), static_cast<std::streamsize>(content.size()));
-        if (!out.good()) {
-            throwIllegalState(env, "Unable to write temporary training file");
-            goto cleanup;
-        }
+        return out;
+    } catch (const openzl::cli::InvalidArgsException& ex) {
+        throwIllegalArgument(env, ex.what());
+        return nullptr;
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
     }
-
-    result = trainFromDirectoryImpl(env,
-            profile,
-            tmpDir.string(),
-            maxTimeSecs,
-            threads,
-            numSamples,
-            pareto);
-
-cleanup:
-    fs::remove_all(tmpDir, ec);
-    return result;
 }
 
 // Compress a single input using the given profile (untrained/default compressor)
