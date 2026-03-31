@@ -34,6 +34,31 @@
 #include "tools/training/utils/utils.h"
 
 namespace {
+struct JNICriticalArray {
+    JNIEnv* env;
+    jarray array;
+    void* ptr;
+
+    JNICriticalArray(JNIEnv* e, jarray a) : env(e), array(a) {
+        ptr = env->GetPrimitiveArrayCritical(array, nullptr);
+    }
+
+    ~JNICriticalArray() {
+        if (ptr != nullptr) {
+            env->ReleasePrimitiveArrayCritical(array, ptr, JNI_ABORT);
+        }
+    }
+
+    void* get() const { return ptr; }
+    void release() {
+        if (ptr != nullptr) {
+            env->ReleasePrimitiveArrayCritical(array, ptr, JNI_ABORT);
+            ptr = nullptr;
+        }
+    }
+    operator bool() const { return ptr != nullptr; }
+};
+
 enum class Protocol : jint {
     Proto = 0,
     Zl    = 1,
@@ -171,13 +196,13 @@ std::string copyArray(JNIEnv* env, jbyteArray array)
     if (length == 0) {
         return data;
     }
-    void* raw = env->GetPrimitiveArrayCritical(array, nullptr);
-    if (raw == nullptr) {
+    JNICriticalArray raw(env, array);
+    if (!raw) {
         throwNew(env, JniRefs().outOfMemoryError, "Failed to access array contents");
         return {};
     }
-    std::memcpy(data.data(), raw, static_cast<size_t>(length));
-    env->ReleasePrimitiveArrayCritical(array, raw, JNI_ABORT);
+    std::memcpy(data.data(), raw.get(), static_cast<size_t>(length));
+    raw.release();
     return data;
 }
 
@@ -1902,20 +1927,19 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
 
     try {
         jsize length = env->GetArrayLength(payload);
-        jboolean isCopy = JNI_FALSE;
-        jbyte* raw = env->GetByteArrayElements(payload, &isCopy);
-        if (raw == nullptr) {
+        JNICriticalArray raw(env, payload);
+        if (!raw) {
             throwNew(env, JniRefs().outOfMemoryError, "Failed to access payload contents");
             return nullptr;
         }
         jbyteArray result = convertPayload(env,
                 inProto,
                 outProto,
-                static_cast<const void*>(raw),
+                raw.get(),
                 static_cast<size_t>(length),
                 compressorBytes,
                 typeName);
-        env->ReleaseByteArrayElements(payload, raw, JNI_ABORT);
+        raw.release();
         return result;
     } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
@@ -2504,14 +2528,20 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
         return nullptr;
     }
 
-    const jbyte* raw = static_cast<const jbyte*>(
-            env->GetPrimitiveArrayCritical(payload, nullptr));
-    if (raw == nullptr) {
+    JNICriticalArray raw(env, payload);
+    if (!raw) {
         throwNew(env, JniRefs().outOfMemoryError, "Failed to access payload contents");
         return nullptr;
     }
-    std::string input(reinterpret_cast<const char*>(raw + offset), static_cast<size_t>(length));
-    env->ReleasePrimitiveArrayCritical(payload, const_cast<jbyte*>(raw), JNI_ABORT);
+    
+    std::string input;
+    try {
+        input.assign(reinterpret_cast<const char*>(static_cast<const jbyte*>(raw.get()) + offset), static_cast<size_t>(length));
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+    raw.release();
     if (env->ExceptionCheck()) {
         return nullptr;
     }
