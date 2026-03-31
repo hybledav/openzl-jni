@@ -75,29 +75,34 @@ public final class SaoDataLoader {
             int saoNum = Short.toUnsignedInt(buf.getShort());
             int ra = buf.getInt();
             int dec = buf.getInt();
-            int mag = (int) Math.round(buf.getFloat() * 100.0f);
+            int magBits = buf.getInt();
             byte spec0 = buf.get();
             byte spec1 = buf.get();
-            int raPm = (int) Math.round(buf.getFloat() * 1_000_000.0f);
-            int decPm = (int) Math.round(buf.getFloat() * 1_000_000.0f);
+            int raPmBits = buf.getInt();
+            int decPmBits = buf.getInt();
             int hd = buf.getInt();
             short dm = buf.getShort();
             short gc = buf.getShort();
 
-            if (catalog == 0 && saoNum == 0 && ra == 0 && dec == 0 && mag == 0 && hd == 0 && dm == 0 && gc == 0) {
+            if (catalog == 0 && saoNum == 0 && ra == 0 && dec == 0
+                    && magBits == 0 && raPmBits == 0 && decPmBits == 0
+                    && hd == 0 && dm == 0 && gc == 0) {
                 continue;
             }
 
-            int catalogNumber = saoNum > 0 ? saoNum : catalog;
             records.add(new SaoStarRecord(
-                    catalogNumber,
+                    catalog,
+                    saoNum,
                     ra,
                     dec,
                     spec0,
                     spec1,
-                    mag,
-                    raPm,
-                    decPm));
+                    magBits,
+                    raPmBits,
+                    decPmBits,
+                    hd,
+                    Short.toUnsignedInt(dm),
+                    Short.toUnsignedInt(gc)));
         }
         return records;
     }
