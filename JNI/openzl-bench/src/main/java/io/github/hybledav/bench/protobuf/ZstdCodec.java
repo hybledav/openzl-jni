@@ -11,7 +11,7 @@ final class ZstdCodec implements Codec {
 
     @Override
     public String name() {
-        return "zstd-" + level;
+        return "zstd";
     }
 
     @Override

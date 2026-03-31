@@ -4,42 +4,30 @@ package io.github.hybledav.utils.sao;
  * Parsed star record from SAO catalog binary format.
  */
 public final class SaoStarRecord {
-    public final int catalogId;
-    public final int saoNumber;
-    public final int raRaw;
-    public final int decRaw;
+    public final int catalogNumber;
+    public final int raMilliarcSec;
+    public final int decMilliarcSec;
     public final byte spectral0;
     public final byte spectral1;
-    public final int magnitudeFloatBits;
-    public final int raPmFloatBits;
-    public final int decPmFloatBits;
-    public final int hd;
-    public final int dm;
-    public final int gc;
+    public final int magnitudeCentimags;
+    public final int raPmMicroArcsecPerYear;
+    public final int decPmMicroArcsecPerYear;
 
-    public SaoStarRecord(int catalogId,
-                         int saoNumber,
-                         int raRaw,
-                         int decRaw,
+    public SaoStarRecord(int catalogNumber,
+                         int raMilliarcSec,
+                         int decMilliarcSec,
                          byte spectral0,
                          byte spectral1,
-                         int magnitudeFloatBits,
-                         int raPmFloatBits,
-                         int decPmFloatBits,
-                         int hd,
-                         int dm,
-                         int gc) {
-        this.catalogId = catalogId;
-        this.saoNumber = saoNumber;
-        this.raRaw = raRaw;
-        this.decRaw = decRaw;
+                         int magnitudeCentimags,
+                         int raPmMicroArcsecPerYear,
+                         int decPmMicroArcsecPerYear) {
+        this.catalogNumber = catalogNumber;
+        this.raMilliarcSec = raMilliarcSec;
+        this.decMilliarcSec = decMilliarcSec;
         this.spectral0 = spectral0;
         this.spectral1 = spectral1;
-        this.magnitudeFloatBits = magnitudeFloatBits;
-        this.raPmFloatBits = raPmFloatBits;
-        this.decPmFloatBits = decPmFloatBits;
-        this.hd = hd;
-        this.dm = dm;
-        this.gc = gc;
+        this.magnitudeCentimags = magnitudeCentimags;
+        this.raPmMicroArcsecPerYear = raPmMicroArcsecPerYear;
+        this.decPmMicroArcsecPerYear = decPmMicroArcsecPerYear;
     }
 }
