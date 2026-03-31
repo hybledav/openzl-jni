@@ -12,7 +12,9 @@ final class CodecRegistry {
         codecs.add(new PureProtoCodec());
         codecs.add(new GzipCodec(6));
         codecs.add(new Lz4Codec());
+        codecs.add(new ZstdCodec(1));
         codecs.add(new ZstdCodec(3));
+        codecs.add(new ZstdCodec(19));
         codecs.add(new OpenZLUntrainedCodec(messageType));
         codecs.addAll(trainedCandidates);
         return codecs;

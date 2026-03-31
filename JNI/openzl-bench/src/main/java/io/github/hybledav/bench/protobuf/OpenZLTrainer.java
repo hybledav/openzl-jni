@@ -11,6 +11,21 @@ import java.util.List;
 final class OpenZLTrainer {
     private static final int WARMUP_ITERATIONS = 3;
     private static final int MEASURE_ITERATIONS = 10;
+    private static final int EVALUATION_SAMPLE_COUNT = 8;
+    private static final String SELECTOR_MODE =
+            System.getProperty("bench.openzl.selector", "diverse").trim().toLowerCase();
+    private static final double MIN_COMPETITIVE_RATIO =
+            Double.parseDouble(System.getProperty("bench.openzl.min.ratio", "1.0"));
+    private static final long MAX_ENCODE_MICROS =
+            Long.getLong("bench.openzl.max.encode.us", -1L);
+    private static final long MAX_DECODE_MICROS =
+            Long.getLong("bench.openzl.max.decode.us", -1L);
+    private static final long MAX_TOTAL_MICROS =
+            Long.getLong("bench.openzl.max.total.us", -1L);
+    private static final long EXPECTED_TOTAL_MICROS =
+            Long.getLong("bench.openzl.expected.total.us", -1L);
+    private static final long EXPECTED_TOLERANCE_MICROS =
+            Long.getLong("bench.openzl.expected.tolerance.us", -1L);
 
     private OpenZLTrainer() {}
 
@@ -56,7 +71,7 @@ final class OpenZLTrainer {
             if (out.length() > 0) {
                 out.append("\n  ");
             }
-            CandidateMetrics m = benchmarkCandidate(codec.compressorBytesArray(), sample, messageType);
+            CandidateMetrics m = benchmarkCandidate(codec.compressorBytesArray(), new byte[][]{sample}, messageType);
             out.append(String.format("%s: %dB compressor, %.1fus enc, %.1fus dec, %.2fx ratio",
                     codec.name(),
                     codec.compressorBytes(),
@@ -84,17 +99,21 @@ final class OpenZLTrainer {
 
         // Benchmark each candidate
         List<OpenZLCandidate> evaluated = new ArrayList<>(trained.length);
-        byte[] samplePayload = selectRepresentativeSample(samples);
+        byte[][] samplePayloads = selectEvaluationSamples(samples, EVALUATION_SAMPLE_COUNT);
 
         for (int i = 0; i < trained.length; i++) {
             byte[] compressor = trained[i];
-            CandidateMetrics metrics = benchmarkCandidate(compressor, samplePayload, messageType);
+            CandidateMetrics metrics = benchmarkCandidate(compressor, samplePayloads, messageType);
             evaluated.add(new OpenZLCandidate(
                     "openzl-trained-" + i,
                     compressor,
                     metrics.encodeNanos,
                     metrics.decodeNanos,
                     metrics.ratio));
+        }
+
+        if ("thresholds".equals(SELECTOR_MODE)) {
+            return selectThresholdCandidates(evaluated, maxCandidates);
         }
 
         // Select diverse candidates based on performance characteristics
@@ -108,37 +127,61 @@ final class OpenZLTrainer {
         return sorted.get(sorted.size() / 2);
     }
 
-    private static CandidateMetrics benchmarkCandidate(byte[] compressor, byte[] sample, String messageType) {
-        // Warmup
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            byte[] encoded = OpenZLProtobuf.convert(sample, OpenZLProtobuf.Protocol.PROTO,
-                    OpenZLProtobuf.Protocol.ZL, compressor, messageType);
-            OpenZLProtobuf.convert(encoded, OpenZLProtobuf.Protocol.ZL,
-                    OpenZLProtobuf.Protocol.PROTO, compressor, messageType);
+    private static byte[][] selectEvaluationSamples(byte[][] samples, int count) {
+        if (samples.length <= count) {
+            return samples;
+        }
+        byte[][] selected = new byte[count][];
+        int maxIndex = samples.length - 1;
+        for (int i = 0; i < count; i++) {
+            int idx = (int) Math.round((double) i * maxIndex / Math.max(1, count - 1));
+            selected[i] = samples[idx];
+        }
+        return selected;
+    }
+
+    private static CandidateMetrics benchmarkCandidate(byte[] compressor, byte[][] samples, String messageType) {
+        long encodeNanosTotal = 0L;
+        long decodeNanosTotal = 0L;
+        long inputBytesTotal = 0L;
+        long encodedBytesTotal = 0L;
+
+        for (byte[] sample : samples) {
+            for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+                byte[] encoded = OpenZLProtobuf.convert(sample, OpenZLProtobuf.Protocol.PROTO,
+                        OpenZLProtobuf.Protocol.ZL, compressor, messageType);
+                OpenZLProtobuf.convert(encoded, OpenZLProtobuf.Protocol.ZL,
+                        OpenZLProtobuf.Protocol.PROTO, compressor, messageType);
+            }
+
+            long encodeStart = System.nanoTime();
+            byte[] encoded = null;
+            for (int i = 0; i < MEASURE_ITERATIONS; i++) {
+                encoded = OpenZLProtobuf.convert(sample, OpenZLProtobuf.Protocol.PROTO,
+                        OpenZLProtobuf.Protocol.ZL, compressor, messageType);
+            }
+            long encodeNanos = (System.nanoTime() - encodeStart) / MEASURE_ITERATIONS;
+
+            long decodeStart = System.nanoTime();
+            for (int i = 0; i < MEASURE_ITERATIONS; i++) {
+                OpenZLProtobuf.convert(encoded, OpenZLProtobuf.Protocol.ZL,
+                        OpenZLProtobuf.Protocol.PROTO, compressor, messageType);
+            }
+            long decodeNanos = (System.nanoTime() - decodeStart) / MEASURE_ITERATIONS;
+
+            encodeNanosTotal += encodeNanos;
+            decodeNanosTotal += decodeNanos;
+            inputBytesTotal += sample.length;
+            encodedBytesTotal += (encoded == null ? sample.length : encoded.length);
         }
 
-        // Measure encode
-        long encodeStart = System.nanoTime();
-        byte[] encoded = null;
-        for (int i = 0; i < MEASURE_ITERATIONS; i++) {
-            encoded = OpenZLProtobuf.convert(sample, OpenZLProtobuf.Protocol.PROTO,
-                    OpenZLProtobuf.Protocol.ZL, compressor, messageType);
-        }
-        long encodeNanos = (System.nanoTime() - encodeStart) / MEASURE_ITERATIONS;
-
-        // Measure decode
-        long decodeStart = System.nanoTime();
-        for (int i = 0; i < MEASURE_ITERATIONS; i++) {
-            OpenZLProtobuf.convert(encoded, OpenZLProtobuf.Protocol.ZL,
-                    OpenZLProtobuf.Protocol.PROTO, compressor, messageType);
-        }
-        long decodeNanos = (System.nanoTime() - decodeStart) / MEASURE_ITERATIONS;
-
-        double ratio = (encoded != null && encoded.length > 0)
-                ? (double) sample.length / encoded.length
+        long encodeNanosAvg = encodeNanosTotal / Math.max(1, samples.length);
+        long decodeNanosAvg = decodeNanosTotal / Math.max(1, samples.length);
+        double ratio = encodedBytesTotal > 0
+                ? (double) inputBytesTotal / encodedBytesTotal
                 : 1.0;
 
-        return new CandidateMetrics(encodeNanos, decodeNanos, ratio);
+        return new CandidateMetrics(encodeNanosAvg, decodeNanosAvg, ratio);
     }
 
     /**
@@ -150,7 +193,12 @@ final class OpenZLTrainer {
      * - speed-optimized: best combined encode+decode speed
      */
     private static List<OpenZLCandidate> selectDiverseCandidates(List<OpenZLCandidate> candidates,
-                                                                   int maxCandidates) {
+                                                                    int maxCandidates) {
+        List<OpenZLCandidate> viable = filterByMinRatio(candidates);
+        if (viable.isEmpty()) {
+            viable = candidates;
+        }
+
         List<OpenZLCandidate> selected = new ArrayList<>();
 
         // Find best in each category
@@ -165,7 +213,7 @@ final class OpenZLTrainer {
         long minDecode = Long.MAX_VALUE, maxDecode = 0;
         double minRatio = Double.MAX_VALUE, maxRatio = 0;
 
-        for (OpenZLCandidate c : candidates) {
+        for (OpenZLCandidate c : viable) {
             if (c.encodeNanos < minEncode) minEncode = c.encodeNanos;
             if (c.encodeNanos > maxEncode) maxEncode = c.encodeNanos;
             if (c.decodeNanos < minDecode) minDecode = c.decodeNanos;
@@ -177,7 +225,7 @@ final class OpenZLTrainer {
         double bestBalancedScore = -1;
         double bestSpeedScore = -1;
 
-        for (OpenZLCandidate c : candidates) {
+        for (OpenZLCandidate c : viable) {
             // Fastest encode
             if (fastestEncode == null || c.encodeNanos < fastestEncode.encodeNanos) {
                 fastestEncode = c;
@@ -229,6 +277,93 @@ final class OpenZLTrainer {
             return new ArrayList<>(selected.subList(0, maxCandidates));
         }
         return selected;
+    }
+
+    private static List<OpenZLCandidate> selectThresholdCandidates(List<OpenZLCandidate> candidates,
+                                                                   int maxCandidates) {
+        List<OpenZLCandidate> viable = filterByThresholds(candidates);
+        if (viable.isEmpty()) {
+            viable = filterByMinRatio(candidates);
+        }
+        if (viable.isEmpty()) {
+            viable = candidates;
+        }
+
+        List<OpenZLCandidate> selected = new ArrayList<>();
+
+        OpenZLCandidate bestRatio = null;
+        OpenZLCandidate fastestTotal = null;
+        OpenZLCandidate nearestLatency = null;
+        long nearestDistance = Long.MAX_VALUE;
+
+        for (OpenZLCandidate c : viable) {
+            if (bestRatio == null || c.ratio > bestRatio.ratio) {
+                bestRatio = c;
+            }
+
+            if (fastestTotal == null || totalNanos(c) < totalNanos(fastestTotal)) {
+                fastestTotal = c;
+            }
+
+            if (EXPECTED_TOTAL_MICROS > 0) {
+                long totalMicros = totalNanos(c) / 1000L;
+                long distance = Math.abs(totalMicros - EXPECTED_TOTAL_MICROS);
+                if (EXPECTED_TOLERANCE_MICROS > 0 && distance > EXPECTED_TOLERANCE_MICROS) {
+                    continue;
+                }
+                if (nearestLatency == null || distance < nearestDistance
+                        || (distance == nearestDistance && c.ratio > nearestLatency.ratio)) {
+                    nearestLatency = c;
+                    nearestDistance = distance;
+                }
+            }
+        }
+
+        addUniqueWithName(selected, nearestLatency, "openzl-trained-target-latency");
+        addUniqueWithName(selected, bestRatio, "openzl-trained-threshold-best-ratio");
+        addUniqueWithName(selected, fastestTotal, "openzl-trained-threshold-fastest");
+
+        if (maxCandidates > 0 && selected.size() > maxCandidates) {
+            return new ArrayList<>(selected.subList(0, maxCandidates));
+        }
+        return selected;
+    }
+
+    private static List<OpenZLCandidate> filterByThresholds(List<OpenZLCandidate> candidates) {
+        List<OpenZLCandidate> filtered = new ArrayList<>();
+        for (OpenZLCandidate c : candidates) {
+            if (c.ratio < MIN_COMPETITIVE_RATIO) {
+                continue;
+            }
+            long encodeMicros = c.encodeNanos / 1000L;
+            long decodeMicros = c.decodeNanos / 1000L;
+            long totalMicros = (c.encodeNanos + c.decodeNanos) / 1000L;
+            if (MAX_ENCODE_MICROS > 0 && encodeMicros > MAX_ENCODE_MICROS) {
+                continue;
+            }
+            if (MAX_DECODE_MICROS > 0 && decodeMicros > MAX_DECODE_MICROS) {
+                continue;
+            }
+            if (MAX_TOTAL_MICROS > 0 && totalMicros > MAX_TOTAL_MICROS) {
+                continue;
+            }
+            filtered.add(c);
+        }
+        return filtered;
+    }
+
+    private static List<OpenZLCandidate> filterByMinRatio(List<OpenZLCandidate> candidates) {
+        List<OpenZLCandidate> viable = new ArrayList<>();
+        for (OpenZLCandidate c : candidates) {
+            if (c.ratio >= MIN_COMPETITIVE_RATIO) {
+                viable.add(c);
+            }
+        }
+        return viable;
+    }
+
+    private static long totalNanos(OpenZLCandidate candidate) {
+        return candidate.encodeNanos + candidate.decodeNanos;
     }
 
     private static void addUniqueWithName(List<OpenZLCandidate> target,

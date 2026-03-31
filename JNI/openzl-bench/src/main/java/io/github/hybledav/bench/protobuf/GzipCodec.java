@@ -14,7 +14,7 @@ final class GzipCodec implements Codec {
 
     @Override
     public String name() {
-        return "gzip";
+        return "gzip-" + level;
     }
 
     @Override

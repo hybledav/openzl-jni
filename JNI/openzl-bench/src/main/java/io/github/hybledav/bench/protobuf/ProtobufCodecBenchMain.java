@@ -2,9 +2,8 @@ package io.github.hybledav.bench.protobuf;
 
 import io.github.hybledav.OpenZLProtobuf;
 import io.github.hybledav.TrainOptions;
-import io.github.hybledav.utils.sao.SaoBatchPayloadGenerator;
 import io.github.hybledav.utils.sao.SaoDataLoader;
-import io.github.hybledav.utils.sao.SaoRowPayloadGenerator;
+import io.github.hybledav.utils.sao.SaoPayloadGenerator;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,7 +18,7 @@ public final class ProtobufCodecBenchMain {
     public static void main(String[] args) throws Exception {
         int payloadCount = Integer.getInteger("bench.payload.count", 256);
         int payloadChunkBytes = Integer.getInteger("bench.payload.chunk.bytes", 4096);
-        String payloadMode = System.getProperty("bench.payload.mode", "sao-batch").trim().toLowerCase(Locale.ROOT);
+        String payloadMode = System.getProperty("bench.payload.mode", "sao").trim().toLowerCase(Locale.ROOT);
         int warmup = Integer.getInteger("bench.warmup.iterations", 1000);
         int measure = Integer.getInteger("bench.measure.iterations", 10000);
         int threads = Integer.getInteger("bench.threads", Math.max(1, Runtime.getRuntime().availableProcessors() / 2));
@@ -36,24 +35,17 @@ public final class ProtobufCodecBenchMain {
         String messageType;
         switch (payloadMode) {
             case "dynamic":
-                payloads = SaoPayloadGenerator.makePayloads(sao, payloadCount, payloadChunkBytes);
+                payloads = DynamicBenchPayloadGenerator.makePayloads(sao, payloadCount, payloadChunkBytes);
                 OpenZLProtobuf.registerSchema(BenchSchema.descriptorBytes());
                 messageType = BenchSchema.messageType();
                 break;
-            case "sao-row":
-                // Row-oriented: each star is a nested message, preserves natural data layout
-                // This should produce compression ratios closer to the OpenZL paper (~2.06x)
-                payloads = SaoRowPayloadGenerator.makePayloads(sao, payloadCount, payloadChunkBytes);
-                OpenZLProtobuf.registerSchema(SaoRowPayloadGenerator.descriptorBytes());
-                messageType = SaoRowPayloadGenerator.messageType();
-                break;
-            case "sao-batch":
+            case "sao":
             default:
                 // Columnar: groups all RA values, all DEC values, etc. together
                 // This artificially improves compressibility (~2.34x)
-                payloads = SaoBatchPayloadGenerator.makePayloads(sao, payloadCount, payloadChunkBytes);
-                OpenZLProtobuf.registerSchema(SaoBatchPayloadGenerator.descriptorBytes());
-                messageType = SaoBatchPayloadGenerator.messageType();
+                payloads = SaoPayloadGenerator.makePayloads(sao, payloadCount, payloadChunkBytes);
+                OpenZLProtobuf.registerSchema(SaoPayloadGenerator.descriptorBytes());
+                messageType = SaoPayloadGenerator.messageType();
                 break;
         }
 
@@ -102,8 +94,8 @@ public final class ProtobufCodecBenchMain {
         printTable(results);
         for (OpenZLTrainedCodec codec : trainedCandidates) {
             printRelative(results, codec.name(), "openzl-untrained");
-            printRelative(results, codec.name(), "gzip");
-            printRelative(results, codec.name(), "zstd");
+            printRelative(results, codec.name(), "gzip-6");
+            printRelative(results, codec.name(), "zstd-3");
             printRelative(results, codec.name(), "lz4");
         }
         printBalancedRanking(results, weightEncode, weightDecode, weightRatio);
