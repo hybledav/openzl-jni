@@ -6,13 +6,13 @@
     <parent>
         <groupId>io.github.hybledav</groupId>
         <artifactId>openzl-jni-parent</artifactId>
-        <version>0.1-SNAPSHOT</version>
+        <version>0.2.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <groupId>io.github.hybledav</groupId>
     <artifactId>openzl-jni</artifactId>
-    <version>0.1-SNAPSHOT</version>
+    <version>0.2.0</version>
     <packaging>jar</packaging>
 
     <name>OpenZL JNI Bindings</name>
