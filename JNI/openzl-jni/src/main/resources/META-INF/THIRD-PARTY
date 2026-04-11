@@ -1,0 +1,17 @@
+OpenZL
+------
+
+Upstream project: facebook/openzl
+Upstream repository: https://github.com/facebook/openzl.git
+Version used by this repository: v0.1.0
+License: BSD-3-Clause
+
+openzl-jni builds and redistributes JNI bindings together with native code that
+is compiled from upstream OpenZL sources.
+
+Local build-time compatibility adjustments are applied from:
+- patches/fix_future_capture.py
+- cmake/shims/logger_string_compat.h
+- cmake/shims/tools_io_stdexcept_compat.h
+
+For the full third-party provenance note, see THIRD_PARTY.md in the repository.

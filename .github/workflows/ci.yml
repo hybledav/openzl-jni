@@ -11,7 +11,7 @@ on:
         required: true
 
 env:
-  REVISION: 0.2.0
+  REVISION: 0.2.1
 
 jobs:
   build:
@@ -329,10 +329,16 @@ jobs:
           cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-javadoc.jar release-packages/base/ || true
           cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-javadoc.jar.asc release-packages/base/ || true
           cp JNI/openzl-jni/pom.xml release-packages/base/openzl-jni-${RELEASE_VERSION}.pom
+          cp LICENSE release-packages/base/
+          cp NOTICE release-packages/base/
+          cp THIRD_PARTY.md release-packages/base/
           for classifier in "${classifiers[@]}"; do
             mkdir -p release-packages/${classifier}
             cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-${classifier}.jar release-packages/${classifier}/
             cp JNI/openzl-jni/target/openzl-jni-${RELEASE_VERSION}-${classifier}.jar.asc release-packages/${classifier}/ || true
+            cp LICENSE release-packages/${classifier}/
+            cp NOTICE release-packages/${classifier}/
+            cp THIRD_PARTY.md release-packages/${classifier}/
           done
 
       - name: Upload release bundle
