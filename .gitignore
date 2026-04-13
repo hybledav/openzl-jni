@@ -90,5 +90,8 @@ target/
 
 # Idea
 .idea/
+.classpath
+.project
+.settings/
 
 cmake_build/
