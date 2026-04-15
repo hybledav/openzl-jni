@@ -831,26 +831,23 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLSddl_compi
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*)
 {
     void* envVoid = nullptr;
-    if (vm->GetEnv(&envVoid, JNI_VERSION_1_8) != JNI_OK) {
-        return JNI_ERR;
-    }
-    JNIEnv* env = static_cast<JNIEnv*>(envVoid);
-    if (!initJniRefs(env)) {
-        clearJniRefs(env);
-        if (env->ExceptionCheck()) {
+    if (vm != nullptr && vm->GetEnv(&envVoid, JNI_VERSION_1_6) == JNI_OK) {
+        JNIEnv* env = static_cast<JNIEnv*>(envVoid);
+        if (!initJniRefs(env) && env->ExceptionCheck()) {
             env->ExceptionClear();
         }
-        return JNI_ERR;
     }
-    return JNI_VERSION_1_8;
+    return JNI_VERSION_1_6;
 }
 
 extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*)
 {
     void* envVoid = nullptr;
-    if (vm->GetEnv(&envVoid, JNI_VERSION_1_8) != JNI_OK) {
-        return;
+    if (vm != nullptr && vm->GetEnv(&envVoid, JNI_VERSION_1_6) == JNI_OK) {
+        JNIEnv* env = static_cast<JNIEnv*>(envVoid);
+        clearJniRefs(env);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
     }
-    JNIEnv* env = static_cast<JNIEnv*>(envVoid);
-    clearJniRefs(env);
 }

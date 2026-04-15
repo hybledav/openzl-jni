@@ -7,7 +7,13 @@ import java.util.Map;
 import java.util.Objects;
 
 public class OpenZLCompressor implements AutoCloseable {
-    private static final Cleaner CLEANER = Cleaner.create();
+    private static final class CleanerHolder {
+        private static final Cleaner INSTANCE = Cleaner.create();
+    }
+
+    private static Cleaner cleaner() {
+        return CleanerHolder.INSTANCE;
+    }
 
     private final OpenZLGraph graph;
     private long nativeHandle;
@@ -34,7 +40,7 @@ public class OpenZLCompressor implements AutoCloseable {
             throw new IllegalStateException("Unable to initialise OpenZL native compressor");
         }
         nativeHandleCleaner = new NativeHandleCleaner(nativeHandle);
-        cleanable = CLEANER.register(this, nativeHandleCleaner);
+        cleanable = cleaner().register(this, nativeHandleCleaner);
     }
 
     public OpenZLGraph graph() {

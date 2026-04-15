@@ -30,6 +30,15 @@ jclass makeGlobalClassRef(JNIEnv* env, const char* name)
     return global;
 }
 
+bool ensureExceptionClass(JNIEnv* env, jclass& target, const char* name)
+{
+    if (target != nullptr) {
+        return true;
+    }
+    target = makeGlobalClassRef(env, name);
+    return target != nullptr;
+}
+
 } // namespace
 
 CachedJNIRefs& JniRefs()
@@ -146,20 +155,16 @@ void NativeState::reset()
 bool initJniRefs(JNIEnv* env)
 {
     auto& refs = JniRefs();
-    refs.compressorClass = makeGlobalClassRef(env, "io/github/hybledav/OpenZLCompressor");
-    if (!refs.compressorClass) {
+    if (!ensureExceptionClass(env, refs.nullPointerException, "java/lang/NullPointerException")) {
         return false;
     }
-    refs.nativeHandleField = env->GetFieldID(refs.compressorClass, "nativeHandle", "J");
-    if (!refs.nativeHandleField) {
+    if (!ensureExceptionClass(env, refs.illegalArgumentException, "java/lang/IllegalArgumentException")) {
         return false;
     }
-    refs.nullPointerException = makeGlobalClassRef(env, "java/lang/NullPointerException");
-    refs.illegalArgumentException = makeGlobalClassRef(env, "java/lang/IllegalArgumentException");
-    refs.illegalStateException = makeGlobalClassRef(env, "java/lang/IllegalStateException");
-    refs.outOfMemoryError = makeGlobalClassRef(env, "java/lang/OutOfMemoryError");
-    if (!refs.nullPointerException || !refs.illegalArgumentException
-            || !refs.illegalStateException || !refs.outOfMemoryError) {
+    if (!ensureExceptionClass(env, refs.illegalStateException, "java/lang/IllegalStateException")) {
+        return false;
+    }
+    if (!ensureExceptionClass(env, refs.outOfMemoryError, "java/lang/OutOfMemoryError")) {
         return false;
     }
     return true;
@@ -168,10 +173,6 @@ bool initJniRefs(JNIEnv* env)
 void clearJniRefs(JNIEnv* env)
 {
     auto& refs = JniRefs();
-    if (refs.compressorClass) {
-        env->DeleteGlobalRef(refs.compressorClass);
-        refs.compressorClass = nullptr;
-    }
     if (refs.nullPointerException) {
         env->DeleteGlobalRef(refs.nullPointerException);
         refs.nullPointerException = nullptr;
@@ -189,6 +190,25 @@ void clearJniRefs(JNIEnv* env)
         refs.outOfMemoryError = nullptr;
     }
     refs.nativeHandleField = nullptr;
+}
+
+bool ensureNativeHandleField(JNIEnv* env, jobject obj)
+{
+    auto& refs = JniRefs();
+    if (refs.nativeHandleField != nullptr) {
+        return true;
+    }
+    if (obj == nullptr) {
+        throwNew(env, refs.nullPointerException, "Compressor instance is required");
+        return false;
+    }
+    jclass compressorClass = env->GetObjectClass(obj);
+    if (compressorClass == nullptr) {
+        return false;
+    }
+    refs.nativeHandleField = env->GetFieldID(compressorClass, "nativeHandle", "J");
+    env->DeleteLocalRef(compressorClass);
+    return refs.nativeHandleField != nullptr;
 }
 
 NativeState* acquireState(ZL_GraphID graph)
@@ -241,6 +261,9 @@ void recycleState(NativeState* state)
 
 NativeState* getState(JNIEnv* env, jobject obj)
 {
+    if (!ensureNativeHandleField(env, obj)) {
+        return nullptr;
+    }
     auto& refs = JniRefs();
     return reinterpret_cast<NativeState*>(
             env->GetLongField(obj, refs.nativeHandleField));
@@ -248,23 +271,44 @@ NativeState* getState(JNIEnv* env, jobject obj)
 
 void setNativeHandle(JNIEnv* env, jobject obj, NativeState* value)
 {
+    if (!ensureNativeHandleField(env, obj)) {
+        return;
+    }
     auto& refs = JniRefs();
     env->SetLongField(obj, refs.nativeHandleField, reinterpret_cast<jlong>(value));
 }
 
 void throwNew(JNIEnv* env, jclass clazz, const char* message)
 {
-    env->ThrowNew(clazz, message);
+    if (clazz != nullptr) {
+        env->ThrowNew(clazz, message);
+        return;
+    }
+    jclass runtimeException = env->FindClass("java/lang/RuntimeException");
+    if (runtimeException != nullptr) {
+        env->ThrowNew(runtimeException, message);
+        env->DeleteLocalRef(runtimeException);
+    }
 }
 
 void throwIllegalState(JNIEnv* env, const std::string& message)
 {
-    throwNew(env, JniRefs().illegalStateException, message.c_str());
+    auto& refs = JniRefs();
+    if (!ensureExceptionClass(env, refs.illegalStateException, "java/lang/IllegalStateException")) {
+        throwNew(env, nullptr, message.c_str());
+        return;
+    }
+    throwNew(env, refs.illegalStateException, message.c_str());
 }
 
 void throwIllegalArgument(JNIEnv* env, const std::string& message)
 {
-    throwNew(env, JniRefs().illegalArgumentException, message.c_str());
+    auto& refs = JniRefs();
+    if (!ensureExceptionClass(env, refs.illegalArgumentException, "java/lang/IllegalArgumentException")) {
+        throwNew(env, nullptr, message.c_str());
+        return;
+    }
+    throwNew(env, refs.illegalArgumentException, message.c_str());
 }
 
 bool ensureState(NativeState* state, const char* method)

@@ -11,7 +11,6 @@
 #include "openzl/zl_opaque_types.h"
 
 struct CachedJNIRefs {
-    jclass compressorClass = nullptr;
     jfieldID nativeHandleField = nullptr;
     jclass nullPointerException = nullptr;
     jclass illegalArgumentException = nullptr;
