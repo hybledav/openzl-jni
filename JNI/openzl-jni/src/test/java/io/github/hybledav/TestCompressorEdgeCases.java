@@ -72,4 +72,31 @@ class TestCompressorEdgeCases {
             assertNull(compressor.decompress(garbage), "Garbage payload should fail to decompress");
         }
     }
+
+    @Test
+    void freshInstancesRemainUsableAcrossRepeatedCreateCloseCycles() {
+        byte[] payload = "repeat-instance-lifecycle".getBytes(StandardCharsets.UTF_8);
+
+        for (int i = 0; i < 3; i++) {
+            try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+                byte[] compressed = compressor.compress(payload);
+                assertNotNull(compressed);
+                assertArrayEquals(payload, compressor.decompress(compressed));
+            }
+        }
+    }
+
+    @Test
+    void freshInstancesRemainUsableAcrossDifferentGraphs() {
+        byte[] payload = "graph-specific-lifecycle".getBytes(StandardCharsets.UTF_8);
+
+        for (OpenZLGraph graph : new OpenZLGraph[] {OpenZLGraph.ZSTD, OpenZLGraph.GENERIC, OpenZLGraph.STORE}) {
+            try (OpenZLCompressor compressor = new OpenZLCompressor(graph)) {
+                byte[] compressed = compressor.compress(payload);
+                assertNotNull(compressed);
+                assertArrayEquals(payload, compressor.decompress(compressed));
+                assertEquals(graph, compressor.graph());
+            }
+        }
+    }
 }
