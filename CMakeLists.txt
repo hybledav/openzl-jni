@@ -31,6 +31,29 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(openzl)
 
+if(WIN32 AND TARGET xgboost_external AND TARGET xgboost AND TARGET dmlc)
+    foreach(OPENZL_XGBOOST_TARGET xgboost dmlc)
+        get_target_property(OPENZL_XGBOOST_LOCATION ${OPENZL_XGBOOST_TARGET} IMPORTED_LOCATION)
+        get_filename_component(OPENZL_XGBOOST_LIB_DIR "${OPENZL_XGBOOST_LOCATION}" DIRECTORY)
+        set(OPENZL_XGBOOST_CANDIDATES
+            "${OPENZL_XGBOOST_LIB_DIR}/${OPENZL_XGBOOST_TARGET}.lib"
+            "${OPENZL_XGBOOST_LIB_DIR}/lib${OPENZL_XGBOOST_TARGET}.lib"
+            "${OPENZL_XGBOOST_LIB_DIR}/${OPENZL_XGBOOST_TARGET}.a"
+            "${OPENZL_XGBOOST_LIB_DIR}/lib${OPENZL_XGBOOST_TARGET}.a"
+        )
+        add_custom_command(
+            OUTPUT "${OPENZL_XGBOOST_LOCATION}"
+            COMMAND ${CMAKE_COMMAND}
+                -DOUTPUT_FILE="${OPENZL_XGBOOST_LOCATION}"
+                -DCANDIDATES="${OPENZL_XGBOOST_CANDIDATES}"
+                -P ${PROJECT_SOURCE_DIR}/cmake/copy_first_existing.cmake
+            DEPENDS xgboost_external
+            VERBATIM)
+        list(APPEND OPENZL_XGBOOST_IMPORTS "${OPENZL_XGBOOST_LOCATION}")
+    endforeach()
+    add_custom_target(openzl_xgboost_imports DEPENDS ${OPENZL_XGBOOST_IMPORTS})
+endif()
+
 find_package(JNI REQUIRED)
 find_package(protobuf CONFIG REQUIRED)
 if(TARGET custom_parsers AND TARGET pytorch_model_parser)
@@ -95,3 +118,6 @@ target_link_libraries(openzl_jni PRIVATE
     protobuf_serializer
     protobuf::libprotobuf
 )
+if(TARGET openzl_xgboost_imports)
+    add_dependencies(openzl_jni openzl_xgboost_imports)
+endif()
