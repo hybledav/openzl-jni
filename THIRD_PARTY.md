@@ -4,7 +4,7 @@
 
 - Upstream project: `facebook/openzl`
 - Upstream repository: `https://github.com/facebook/openzl.git`
-- Version used by this repository: `v0.1.0`
+- Version used by this repository: `v0.2.0`
 - License: BSD-3-Clause
 - Primary integration point: `CMakeLists.txt`
 

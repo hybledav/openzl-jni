@@ -16,12 +16,37 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
+
+openzl::cli::ProfileArgs makeProfileArgs(
+        const std::string& profile,
+        const std::map<std::string, std::string>& arguments = {})
+{
+    openzl::arg::ArgParser parser;
+    openzl::cli::ProfileArgs::addArgs(parser);
+
+    std::vector<std::string> argvStorage = { "openzl-jni", "--profile", profile };
+    auto profileArg = arguments.find("TBD");
+    if (profileArg != arguments.end()) {
+        argvStorage.push_back("--profile-arg");
+        argvStorage.push_back(profileArg->second);
+    }
+
+    std::vector<char*> argv;
+    argv.reserve(argvStorage.size());
+    for (auto& arg : argvStorage) {
+        argv.push_back(arg.data());
+    }
+
+    return openzl::cli::ProfileArgs(parser.parse(static_cast<int>(argv.size()), argv.data()));
+}
 
 jobjectArray trainFromDirectoryImpl(JNIEnv* env,
         const std::string& profile,
@@ -49,8 +74,7 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
         }
 
         openzl::Compressor compressor;
-        openzl::cli::ProfileArgs args;
-        args.name = profile;
+        auto args = makeProfileArgs(profile);
         auto* profilePtr = it->second.get();
         ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
         compressor.selectStartingGraph(gid);
@@ -246,8 +270,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_confi
         return;
     }
 
-    openzl::cli::ProfileArgs args;
-    args.name = profile;
+    std::map<std::string, std::string> profileArgs;
     for (jsize i = 0; i < keyCount; ++i) {
         auto keyObj = static_cast<jstring>(env->GetObjectArrayElement(argKeys, i));
         auto valueObj = static_cast<jstring>(env->GetObjectArrayElement(argValues, i));
@@ -277,7 +300,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_confi
             return;
         }
 
-        args.argmap.emplace(std::string(keyChars), std::string(valueChars));
+        profileArgs.emplace(std::string(keyChars), std::string(valueChars));
         env->ReleaseStringUTFChars(keyObj, keyChars);
         env->ReleaseStringUTFChars(valueObj, valueChars);
         env->DeleteLocalRef(keyObj);
@@ -285,6 +308,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_confi
     }
 
     try {
+        auto args = makeProfileArgs(profile, profileArgs);
         auto* profilePtr = it->second.get();
         ZL_GraphID graph = profilePtr->gen(
                 state->compressor.get(),
@@ -562,8 +586,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
 
     try {
         openzl::Compressor compressor;
-        openzl::cli::ProfileArgs args;
-        args.name = profile;
+        auto args = makeProfileArgs(profile);
         auto* profilePtr = it->second.get();
         ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
         compressor.selectStartingGraph(gid);
@@ -687,8 +710,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
         const auto& profiles = openzl::cli::compressProfiles();
         auto it = profiles.find(profile);
         if (it != profiles.end()) {
-            openzl::cli::ProfileArgs args;
-            args.name = profile;
+            auto args = makeProfileArgs(profile);
             auto* profilePtr = it->second.get();
             try {
                 ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);

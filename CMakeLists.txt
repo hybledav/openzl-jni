@@ -22,7 +22,7 @@ include(FetchContent)
 FetchContent_Declare(
   openzl
   GIT_REPOSITORY https://github.com/facebook/openzl.git
-  GIT_TAG v0.1.0
+  GIT_TAG v0.2.0
   GIT_SHALLOW TRUE
   GIT_PROGRESS TRUE
   GIT_SUBMODULES ""        
