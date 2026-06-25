@@ -38,9 +38,9 @@ if(WIN32 AND TARGET xgboost_external AND TARGET xgboost AND TARGET dmlc)
         add_custom_command(
             OUTPUT "${OPENZL_XGBOOST_LOCATION}"
             COMMAND ${CMAKE_COMMAND}
-                -DOUTPUT_FILE="${OPENZL_XGBOOST_LOCATION}"
-                -DLIB_DIR="${OPENZL_XGBOOST_LIB_DIR}"
-                -DLIB_NAME="${OPENZL_XGBOOST_TARGET}"
+                -DOUTPUT_FILE=${OPENZL_XGBOOST_LOCATION}
+                -DLIB_DIR=${OPENZL_XGBOOST_LIB_DIR}
+                -DLIB_NAME=${OPENZL_XGBOOST_TARGET}
                 -P ${PROJECT_SOURCE_DIR}/cmake/copy_first_existing.cmake
             DEPENDS xgboost_external
             VERBATIM)
