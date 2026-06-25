@@ -2,6 +2,13 @@ if(EXISTS "${OUTPUT_FILE}")
     return()
 endif()
 
+set(CANDIDATES
+    "${LIB_DIR}/${LIB_NAME}.lib"
+    "${LIB_DIR}/lib${LIB_NAME}.lib"
+    "${LIB_DIR}/${LIB_NAME}.a"
+    "${LIB_DIR}/lib${LIB_NAME}.a"
+)
+
 foreach(CANDIDATE IN LISTS CANDIDATES)
     if(EXISTS "${CANDIDATE}")
         file(COPY_FILE "${CANDIDATE}" "${OUTPUT_FILE}")

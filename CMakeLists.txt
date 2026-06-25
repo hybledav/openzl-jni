@@ -35,17 +35,12 @@ if(WIN32 AND TARGET xgboost_external AND TARGET xgboost AND TARGET dmlc)
     foreach(OPENZL_XGBOOST_TARGET xgboost dmlc)
         get_target_property(OPENZL_XGBOOST_LOCATION ${OPENZL_XGBOOST_TARGET} IMPORTED_LOCATION)
         get_filename_component(OPENZL_XGBOOST_LIB_DIR "${OPENZL_XGBOOST_LOCATION}" DIRECTORY)
-        set(OPENZL_XGBOOST_CANDIDATES
-            "${OPENZL_XGBOOST_LIB_DIR}/${OPENZL_XGBOOST_TARGET}.lib"
-            "${OPENZL_XGBOOST_LIB_DIR}/lib${OPENZL_XGBOOST_TARGET}.lib"
-            "${OPENZL_XGBOOST_LIB_DIR}/${OPENZL_XGBOOST_TARGET}.a"
-            "${OPENZL_XGBOOST_LIB_DIR}/lib${OPENZL_XGBOOST_TARGET}.a"
-        )
         add_custom_command(
             OUTPUT "${OPENZL_XGBOOST_LOCATION}"
             COMMAND ${CMAKE_COMMAND}
                 -DOUTPUT_FILE="${OPENZL_XGBOOST_LOCATION}"
-                -DCANDIDATES="${OPENZL_XGBOOST_CANDIDATES}"
+                -DLIB_DIR="${OPENZL_XGBOOST_LIB_DIR}"
+                -DLIB_NAME="${OPENZL_XGBOOST_TARGET}"
                 -P ${PROJECT_SOURCE_DIR}/cmake/copy_first_existing.cmake
             DEPENDS xgboost_external
             VERBATIM)
