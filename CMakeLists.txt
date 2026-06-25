@@ -90,6 +90,7 @@ target_link_libraries(openzl_jni PRIVATE
     sddl_compiler_lib
     tools_io
     tools_training
+    arg
     protobuf_serializer
     protobuf::libprotobuf
 )

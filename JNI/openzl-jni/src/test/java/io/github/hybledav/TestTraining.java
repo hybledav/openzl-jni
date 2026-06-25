@@ -16,6 +16,15 @@ public class TestTraining {
         return arr;
     }
 
+    private static byte[][] makeCsvSamples(int n, String base) {
+        byte[][] arr = new byte[n][];
+        for (int i = 0; i < n; i++) {
+            arr[i] = ("col1,col2\n" + base + i + ",value" + i + "\n")
+                    .getBytes(StandardCharsets.UTF_8);
+        }
+        return arr;
+    }
+
     @Test
     public void trainSerialDefaultOptions() {
         byte[][] inputs = makeSamples(3, "alpha");
@@ -39,7 +48,7 @@ public class TestTraining {
 
     @Test
     public void trainCsvProfileSmall() {
-        byte[][] inputs = makeSamples(4, "csvline");
+        byte[][] inputs = makeCsvSamples(4, "csvline");
         byte[][] trained = OpenZLCompressor.train("csv", inputs, new TrainOptions());
         assertNotNull(trained);
     }
@@ -116,7 +125,7 @@ public class TestTraining {
 
     @Test
     public void trainCsvParetoAndThreads() {
-        byte[][] inputs = makeSamples(6, "csvpar");
+        byte[][] inputs = makeCsvSamples(6, "csvpar");
         TrainOptions opts = new TrainOptions();
         opts.threads = 1;
         opts.paretoFrontier = true;
