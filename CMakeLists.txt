@@ -27,20 +27,9 @@ FetchContent_Declare(
   GIT_PROGRESS TRUE
   GIT_SUBMODULES ""        
   GIT_SUBMODULES_RECURSE TRUE
+  PATCH_COMMAND ${CMAKE_COMMAND} -DOPENZL_SOURCE_DIR=<SOURCE_DIR> -P ${PROJECT_SOURCE_DIR}/cmake/patch_openzl_windows_xgboost.cmake
 )
 FetchContent_MakeAvailable(openzl)
-
-if(WIN32)
-    foreach(OPENZL_XGBOOST_TARGET xgboost dmlc)
-        if(TARGET ${OPENZL_XGBOOST_TARGET})
-            get_target_property(OPENZL_XGBOOST_LOCATION ${OPENZL_XGBOOST_TARGET} IMPORTED_LOCATION)
-            if(OPENZL_XGBOOST_LOCATION)
-                string(REPLACE "/lib${OPENZL_XGBOOST_TARGET}" "/${OPENZL_XGBOOST_TARGET}" OPENZL_XGBOOST_LOCATION "${OPENZL_XGBOOST_LOCATION}")
-                set_target_properties(${OPENZL_XGBOOST_TARGET} PROPERTIES IMPORTED_LOCATION "${OPENZL_XGBOOST_LOCATION}")
-            endif()
-        endif()
-    endforeach()
-endif()
 
 find_package(JNI REQUIRED)
 find_package(protobuf CONFIG REQUIRED)
