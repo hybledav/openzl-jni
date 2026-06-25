@@ -64,7 +64,6 @@ add_library(openzl_jni SHARED
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorDirect.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorMetadata.cpp
     ${OPENZL_JNI_DIR}/compressor/OpenZLCompressorNumeric.cpp
-    ${openzl_SOURCE_DIR}/cli/utils/compress_profiles.cpp
 )
 set_target_properties(openzl_jni PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/cli"
@@ -90,6 +89,7 @@ target_link_libraries(openzl_jni PRIVATE
     sddl_compiler_lib
     tools_io
     tools_training
+    utils
     arg
     protobuf_serializer
     protobuf::libprotobuf
