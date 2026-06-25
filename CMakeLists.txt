@@ -113,6 +113,9 @@ target_link_libraries(openzl_jni PRIVATE
     protobuf_serializer
     protobuf::libprotobuf
 )
+if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_link_options(openzl_jni PRIVATE LINKER:/force:multiple)
+endif()
 if(TARGET openzl_xgboost_imports)
     add_dependencies(openzl_jni openzl_xgboost_imports)
 endif()
