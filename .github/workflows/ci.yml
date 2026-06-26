@@ -37,7 +37,7 @@ jobs:
           - name: windows-x86_64
             runner: windows-2022
             classifier: windows_amd64
-            lib-name: openzl_jni.dll
+            lib-name: libopenzl_jni.dll
             run-tests: true
             allow-failure: false
 
