@@ -86,7 +86,11 @@ add_library(openzl_jni SHARED
 )
 set_target_properties(openzl_jni PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/cli"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/cli"
 )
+if(WIN32)
+    set_target_properties(openzl_jni PROPERTIES PREFIX "")
+endif()
 target_include_directories(openzl_jni PRIVATE
     ${PROJECT_BINARY_DIR}/include
     ${PROJECT_SOURCE_DIR}/include
