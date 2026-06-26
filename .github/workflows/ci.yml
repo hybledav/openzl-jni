@@ -66,7 +66,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          choco install llvm --yes
           choco install mingw --yes
           choco install make --yes
           choco install cmake --yes
@@ -76,9 +75,7 @@ jobs:
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             cmake -S . -B cmake_build -G "MinGW Makefiles" \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_C_COMPILER=clang.exe \
-              -DCMAKE_CXX_COMPILER=clang++.exe
+              -DCMAKE_BUILD_TYPE=Release
           else
             cmake -S . -B cmake_build -G Ninja -DCMAKE_BUILD_TYPE=Release
           fi
