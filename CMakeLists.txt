@@ -19,10 +19,12 @@ set(OPENZL_BUILD_PROTOBUF_TOOLS ON CACHE BOOL "Build OpenZL protobuf tooling for
 
 include(FetchContent)
 
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/openzl-version.txt" OPENZL_VERSION LIMIT_COUNT 1)
+
 FetchContent_Declare(
   openzl
   GIT_REPOSITORY https://github.com/facebook/openzl.git
-  GIT_TAG v0.2.0
+  GIT_TAG v${OPENZL_VERSION}
   GIT_SHALLOW TRUE
   GIT_PROGRESS TRUE
   GIT_SUBMODULES ""        

@@ -64,3 +64,10 @@ mvn -pl JNI/openzl-jni -am clean package
 
 By submitting a contribution, you agree that it will be licensed under the
 BSD-3-Clause license found in `LICENSE`.*** End Patch
+
+## Publishing a release
+
+Run the CI workflow manually and enter the JNI version as `MAJOR.MINOR.PATCH`.
+The workflow reads the native OpenZL version from `cmake/openzl-version.txt`
+and publishes Maven artifacts as `<openzl-version>-<jni-version>`. For example,
+OpenZL 0.2.0 and JNI 0.2.1 produce `0.2.0-0.2.1`.
