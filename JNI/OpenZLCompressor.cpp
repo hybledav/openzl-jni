@@ -3,6 +3,7 @@
 #include "openzl/cpp/CParam.hpp"
 #include "openzl/cpp/Compressor.hpp"
 #include "openzl/zl_compress.h"
+#include "openzl/zl_version.h"
 #include "cli/utils/compress_profiles.h"
 #include "cli/utils/util.h"
 #include "custom_parsers/sddl/sddl_profile.h"
@@ -78,6 +79,7 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
         auto* profilePtr = it->second.get();
         ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
         compressor.selectStartingGraph(gid);
+        compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
 
         openzl::training::TrainParams params;
         if (threads > 0) {
@@ -91,14 +93,16 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
         }
         params.paretoFrontier = pareto != JNI_FALSE;
 
-        params.compressorGenFunc = [profilePtr, args](openzl::poly::string_view serialized) -> std::unique_ptr<openzl::Compressor> {
+        params.compressorGenFunc = [profilePtr, args](
+                openzl::poly::string_view serialized,
+                openzl::poly::string_view dictBundle) {
             auto up = std::make_unique<openzl::Compressor>();
             try {
                 ZL_GraphID gid = profilePtr->gen(up->get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
                 up->selectStartingGraph(gid);
             } catch (...) {
             }
-            up->deserialize(serialized);
+            up->deserialize(serialized, dictBundle);
             return up;
         };
 
@@ -113,13 +117,17 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
             return nullptr;
         }
         for (size_t i = 0; i < trained.size(); ++i) {
-            const std::string_view& sv = *trained[i];
-            jbyteArray ba = env->NewByteArray(static_cast<jsize>(sv.size()));
+            const auto& serialized = trained[i].serializedCompressor;
+            jbyteArray ba = env->NewByteArray(static_cast<jsize>(serialized.size()));
             if (ba == nullptr) {
                 return nullptr;
             }
-            if (sv.size() > 0) {
-                env->SetByteArrayRegion(ba, 0, static_cast<jsize>(sv.size()), reinterpret_cast<const jbyte*>(sv.data()));
+            if (!serialized.empty()) {
+                env->SetByteArrayRegion(
+                        ba,
+                        0,
+                        static_cast<jsize>(serialized.size()),
+                        reinterpret_cast<const jbyte*>(serialized.data()));
             }
             env->SetObjectArrayElement(out, static_cast<jsize>(i), ba);
             env->DeleteLocalRef(ba);

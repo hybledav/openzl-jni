@@ -25,6 +25,7 @@
 #include "openzl/cpp/CParam.hpp"
 #include "openzl/shared/string_view.h"
 #include "openzl/zl_reflection.h"
+#include "openzl/zl_version.h"
 #include "tools/protobuf/ProtoDeserializer.h"
 #include "tools/protobuf/ProtoGraph.h"
 #include "tools/protobuf/ProtoSerializer.h"
@@ -692,8 +693,7 @@ std::string trainCompressorFromSamples(
     if (trained.empty()) {
         return {};
     }
-    const std::string_view& serialized = *trained.front();
-    return std::string(serialized.data(), serialized.size());
+    return std::move(trained.front().serializedCompressor);
 }
 
 SerializerCacheEntry& serializerEntryForType(const std::string& type)
@@ -2291,12 +2291,15 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLStructur
             params.maxTimeSecs = static_cast<size_t>(maxTimeSecs);
         }
         params.paretoFrontier = pareto != JNI_FALSE;
-        params.compressorGenFunc = [typeName](openzl::poly::string_view serialized) {
+        params.compressorGenFunc = [typeName](
+                openzl::poly::string_view serialized,
+                openzl::poly::string_view dictBundle) {
             auto up = std::make_unique<openzl::Compressor>(createStructuredCompressorForType(typeName));
-            up->deserialize(serialized);
+            up->deserialize(serialized, dictBundle);
             return up;
         };
 
+        baseCompressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
         auto trained = openzl::training::train(multiInputs, baseCompressor, params);
 
         jclass byteArrClass = env->FindClass("[B");
@@ -2308,13 +2311,17 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLStructur
             return nullptr;
         }
         for (size_t i = 0; i < trained.size(); ++i) {
-            const std::string_view& sv = *trained[i];
-            jbyteArray elem = env->NewByteArray(static_cast<jsize>(sv.size()));
+            const auto& serialized = trained[i].serializedCompressor;
+            jbyteArray elem = env->NewByteArray(static_cast<jsize>(serialized.size()));
             if (elem == nullptr) {
                 return nullptr;
             }
-            if (!sv.empty()) {
-                env->SetByteArrayRegion(elem, 0, static_cast<jsize>(sv.size()), reinterpret_cast<const jbyte*>(sv.data()));
+            if (!serialized.empty()) {
+                env->SetByteArrayRegion(
+                        elem,
+                        0,
+                        static_cast<jsize>(serialized.size()),
+                        reinterpret_cast<const jbyte*>(serialized.data()));
             }
             env->SetObjectArrayElement(out, static_cast<jsize>(i), elem);
             env->DeleteLocalRef(elem);
@@ -2632,19 +2639,22 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             params.maxTimeSecs = static_cast<size_t>(maxTimeSecs);
         }
         params.paretoFrontier = pareto != JNI_FALSE;
-        params.compressorGenFunc = [](openzl::poly::string_view serialized) {
+        params.compressorGenFunc = [](
+                openzl::poly::string_view serialized,
+                openzl::poly::string_view dictBundle) {
             auto up = std::make_unique<openzl::Compressor>();
             try {
                 ZL_GraphID gid = openzl::protobuf::ZL_Protobuf_registerGraph(up->get());
                 up->selectStartingGraph(gid);
             } catch (...) {
             }
-            up->deserialize(serialized);
+            up->deserialize(serialized, dictBundle);
             return up;
         };
 
-        auto trained = openzl::training::train(
-                multiInputs, *serializer.getCompressor(), params);
+        auto& compressor = *serializer.getCompressor();
+        compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
+        auto trained = openzl::training::train(multiInputs, compressor, params);
 
         jclass byteArrClass = env->FindClass("[B");
         if (!byteArrClass) {
@@ -2656,17 +2666,17 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             return nullptr;
         }
         for (size_t i = 0; i < trained.size(); ++i) {
-            const std::string_view& sv = *trained[i];
-            jbyteArray elem = env->NewByteArray(static_cast<jsize>(sv.size()));
+            const auto& serialized = trained[i].serializedCompressor;
+            jbyteArray elem = env->NewByteArray(static_cast<jsize>(serialized.size()));
             if (elem == nullptr) {
                 return nullptr;
             }
-            if (!sv.empty()) {
+            if (!serialized.empty()) {
                 env->SetByteArrayRegion(
                         elem,
                         0,
-                        static_cast<jsize>(sv.size()),
-                        reinterpret_cast<const jbyte*>(sv.data()));
+                        static_cast<jsize>(serialized.size()),
+                        reinterpret_cast<const jbyte*>(serialized.data()));
             }
             env->SetObjectArrayElement(out, static_cast<jsize>(i), elem);
             env->DeleteLocalRef(elem);
