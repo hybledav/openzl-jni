@@ -19,11 +19,11 @@ set(OPENZL_BUILD_PROTOBUF_TOOLS ON CACHE BOOL "Build OpenZL protobuf tooling for
 
 include(FetchContent)
 
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/version")
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version" OPENZL_JNI_VERSION)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/release-version.txt")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/cmake/release-version.txt" OPENZL_JNI_VERSION)
 string(STRIP "${OPENZL_JNI_VERSION}" OPENZL_JNI_VERSION)
 if(NOT OPENZL_JNI_VERSION MATCHES "^((0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*))-[1-9][0-9]*$")
-  message(FATAL_ERROR "Expected MAJOR.MINOR.PATCH-N in version, got '${OPENZL_JNI_VERSION}'")
+  message(FATAL_ERROR "Expected MAJOR.MINOR.PATCH-N in cmake/release-version.txt, got '${OPENZL_JNI_VERSION}'")
 endif()
 set(OPENZL_VERSION "${CMAKE_MATCH_1}")
 

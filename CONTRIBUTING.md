@@ -67,7 +67,7 @@ BSD-3-Clause license found in `LICENSE`.*** End Patch
 
 ## Publishing a release
 
-Set the release in the root `version` file as `<openzl-version>-<release-number>`.
+Set the release in `cmake/release-version.txt` as `<openzl-version>-<release-number>`.
 CMake fetches the OpenZL version named in that file. Start the release number
 at 1 for each OpenZL version, then increment it for each JNI release with the
 same OpenZL version. For example, `0.2.0-1` is followed by `0.2.0-2` for a JNI

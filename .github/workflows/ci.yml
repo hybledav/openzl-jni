@@ -25,11 +25,11 @@ jobs:
           from urllib.request import urlopen
           from xml.etree import ElementTree
 
-          version = Path("version").read_text().strip()
+          version = Path("cmake/release-version.txt").read_text().strip()
           component = r"(?:0|[1-9][0-9]*)"
           match = re.fullmatch(rf"({component}\.{component}\.{component})-([1-9][0-9]*)", version)
           if not match:
-              raise SystemExit(f"Expected MAJOR.MINOR.PATCH-N in version, got {version!r}")
+              raise SystemExit(f"Expected MAJOR.MINOR.PATCH-N in cmake/release-version.txt, got {version!r}")
 
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch":
               upstream, release = match.groups()
