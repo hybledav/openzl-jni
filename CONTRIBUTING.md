@@ -67,7 +67,11 @@ BSD-3-Clause license found in `LICENSE`.*** End Patch
 
 ## Publishing a release
 
-Run the CI workflow manually and enter the JNI version as `MAJOR.MINOR.PATCH`.
-The workflow reads the native OpenZL version from `cmake/openzl-version.txt`
-and publishes Maven artifacts as `<openzl-version>-<jni-version>`. For example,
-OpenZL 0.2.0 and JNI 0.2.1 produce `0.2.0-0.2.1`.
+Set the release in the root `version` file as `<openzl-version>-<release-number>`.
+CMake fetches the OpenZL version named in that file. Start the release number
+at 1 for each OpenZL version, then increment it for each JNI release with the
+same OpenZL version. For example, `0.2.0-1` is followed by `0.2.0-2` for a JNI
+update or `0.3.0-1` for the first release with OpenZL 0.3.0.
+
+Run the CI workflow manually from the release commit. It checks the release
+number against Maven Central and stages the artifacts for approval in Sonatype.
