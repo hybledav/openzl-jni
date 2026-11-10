@@ -1,4 +1,5 @@
 #include "OpenZLNativeSupport.h"
+#include "openzl/zl_version.h"
 
 #include <array>
 #include <cstdio>
@@ -83,6 +84,7 @@ NativeState::NativeState(ZL_GraphID graph)
     if (!cctx || !dctx) {
         throw std::bad_alloc();
     }
+    compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
     applyDefaultParameters();
     configureGraph();
 }
@@ -111,14 +113,6 @@ void NativeState::applyDefaultParameters()
     expectSuccess(
             ZL_CCtx_setParameter(cctx, ZL_CParam_stickyParameters, 1),
             "ZL_CCtx_setParameter(stickyParameters)");
-    expectSuccess(
-            ZL_CCtx_setParameter(
-                    cctx, ZL_CParam_compressionLevel, ZL_COMPRESSIONLEVEL_DEFAULT),
-            "ZL_CCtx_setParameter(compressionLevel)");
-    expectSuccess(
-            ZL_CCtx_setParameter(
-                    cctx, ZL_CParam_formatVersion, ZL_getDefaultEncodingVersion()),
-            "ZL_CCtx_setParameter(formatVersion)");
     expectSuccess(
             ZL_DCtx_setParameter(dctx, ZL_DParam_stickyParameters, 1),
             "ZL_DCtx_setParameter(stickyParameters)");
@@ -241,6 +235,8 @@ void recycleState(NativeState* state)
     if (state == nullptr) {
         return;
     }
+    state->compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
+    state->compressor.setParameter(openzl::CParam::CompressionLevel, ZL_COMPRESSIONLEVEL_DEFAULT);
     state->reset();
     if (tlsCachedState == nullptr) {
         tlsCachedState = state;

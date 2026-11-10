@@ -202,7 +202,20 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
 }
 ```
 
-All level changes are sticky until you call `reset()` or explicitly select a new value, regardless of the active profile.
+Compression levels persist across profile changes and `reset()` on the same compressor.
+With OpenZL 0.3.0, `OpenZLGraph.NUMERIC` enables the Compression Transformer at
+level 7 and above. The `LZ` and `BIG_ENDIAN_*` profiles accept byte input.
+Use `configureProfile(OpenZLProfile.SDDL2, Map.of("TBD", descriptionPath))`
+to load an SDDL2 file. `OpenZLSddl.compile` still compiles SDDL v1.
+
+### Frame compatibility
+
+OpenZL 0.3.0 writes format 27 by default and reads frames produced by OpenZL
+0.2.0. Call `setFormatVersion(24)` on an `OpenZLCompressor` before writing
+frames for OpenZL 0.2.0 readers. The selected graph must support that format.
+Pass `0` to restore the native default. Serialized compressor configurations
+have separate compatibility rules, and numeric graphs serialized by OpenZL
+0.3.0 require a 0.3.0 reader.
 
 ---
 

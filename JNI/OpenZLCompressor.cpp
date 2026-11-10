@@ -162,7 +162,15 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setPa
     if (!ensureState(state, "setParameter")) {
         return;
     }
-    state->compressor.setParameter(static_cast<openzl::CParam>(param), value);
+    const auto parameter = static_cast<openzl::CParam>(param);
+    if (parameter == openzl::CParam::FormatVersion && value == 0) {
+        value = ZL_getDefaultEncodingVersion();
+    }
+    try {
+        state->compressor.setParameter(parameter, value);
+    } catch (const std::exception& ex) {
+        throwIllegalArgument(env, ex.what());
+    }
 }
 
 extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_getParameter(JNIEnv* env, jobject obj, jint param)

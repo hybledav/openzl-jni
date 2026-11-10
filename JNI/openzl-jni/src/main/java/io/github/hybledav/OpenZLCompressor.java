@@ -27,6 +27,7 @@ public class OpenZLCompressor implements AutoCloseable {
     private static final int META_FORMAT_VERSION = 5;
     private static final int META_LENGTH = 6;
     private static final int CPARAM_COMPRESSION_LEVEL = 2;
+    private static final int CPARAM_FORMAT_VERSION = 4;
 
     public OpenZLCompressor() {
         this(OpenZLGraph.ZSTD);
@@ -212,6 +213,23 @@ public class OpenZLCompressor implements AutoCloseable {
         ensureOpen();
         int value = getParameter(CPARAM_COMPRESSION_LEVEL);
         return OpenZLCompressionLevel.fromLevel(value);
+    }
+
+    /**
+     * Sets the frame format used for subsequent compression. Use 24 for
+     * readers running OpenZL 0.2.0, or 0 to restore the native default.
+     *
+     * @throws IllegalArgumentException if the native library rejects the version
+     */
+    public void setFormatVersion(int version) {
+        ensureOpen();
+        setParameter(CPARAM_FORMAT_VERSION, version);
+    }
+
+    /** Returns the frame format version used for compression. */
+    public int getFormatVersion() {
+        ensureOpen();
+        return getParameter(CPARAM_FORMAT_VERSION);
     }
 
     public int compress(byte[] input, byte[] output) {
