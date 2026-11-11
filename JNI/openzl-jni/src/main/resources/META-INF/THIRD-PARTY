@@ -1,17 +1,42 @@
-OpenZL
-------
+Third-party native components shipped by openzl-jni
 
-Upstream project: facebook/openzl
-Upstream repository: https://github.com/facebook/openzl.git
-Version used by this repository: v0.2.0
-License: BSD-3-Clause
+The native libraries use OpenZL 0.2.0. The full license texts and applicable
+source notices are in META-INF/licenses. The versioned source locations and
+SHA-256 values are recorded in META-INF/native-licenses.json.
 
-openzl-jni builds and redistributes JNI bindings together with native code that
-is compiled from upstream OpenZL sources.
+- OpenZL 0.2.0 — licenses/OpenZL-LICENSE.txt
+- Protobuf 32.0 — licenses/Protobuf-LICENSE.txt
+- Abseil 20250512.1 — licenses/Abseil-LICENSE.txt
+- utf8_range Protobuf 32.0 — licenses/utf8_range-LICENSE.txt
+- Zstandard 1.5.7 — licenses/Zstandard-LICENSE.txt
+- LZ4 library 1.10.0 — licenses/LZ4-LICENSE.txt
+- XGBoost 3.1.0 — licenses/XGBoost-LICENSE.txt
+- dmlc-core 8986b0598df709117570984571476c3614f55724 — licenses/dmlc-core-LICENSE.txt
+- Ryu (within XGBoost) XGBoost 3.1.0 — licenses/Ryu-NOTICE.txt
+- xxHash (within OpenZL) OpenZL 0.2.0 — licenses/xxHash-OpenZL-LICENSE.txt
+- xxHash (within Zstandard) Zstandard 1.5.7 — licenses/xxHash-Zstandard-LICENSE.txt
+- pdqsort (modified by OpenZL) OpenZL 0.2.0 — licenses/pdqsort-LICENSE.txt
+- FSE/HUF (within OpenZL) OpenZL 0.2.0 — licenses/FSE-HUF-NOTICE.txt
 
-Local build-time compatibility adjustments are applied from:
-- patches/fix_future_capture.py
-- cmake/shims/logger_string_compat.h
-- cmake/shims/tools_io_stdexcept_compat.h
+- GSL code in XGBoost span — licenses/GSL-LICENSE.txt and licenses/GSL-NOTICE.txt
+- ConcurrentQueue code in dmlc-core — licenses/ConcurrentQueue-LICENSE.txt
+- sweater code in XGBoost — licenses/sweater-LICENSE.txt and licenses/sweater-NOTICE.txt
 
-For the full third-party provenance note, see THIRD_PARTY.md in the repository.
+Abseil, XGBoost and dmlc-core are used under Apache-2.0. The Ryu code
+included by XGBoost is used under its Apache-2.0 option, whose full text
+is included as XGBoost-LICENSE.txt. The full Ryu copyright notice is
+preserved in Ryu-NOTICE.txt. Zstandard and the FSE/HUF code are used under
+their BSD license options. The LZ4 library is used under BSD-2-Clause.
+
+The wrapper's BSD license and attribution are in META-INF/LICENSE and
+META-INF/NOTICE.
+
+Windows builds statically link GCC and MinGW runtime components. Their
+supplier license documents, including the GCC Runtime Library Exception,
+are packaged beside the DLL under lib/windows_amd64/licenses. Their exact
+compiler version and file checksums are in lib/windows_amd64/runtime-licenses.json.
+These runtime documents apply to the Windows binary. Operating-system
+libraries are supplied by the user's system.
+
+Compatibility modifications applied during the native build are described in
+THIRD_PARTY.md in the source repository.

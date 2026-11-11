@@ -186,7 +186,9 @@
                 <artifactId>maven-source-plugin</artifactId>
                 <version>3.3.0</version>
                 <configuration>
-                    <excludeResources>true</excludeResources>
+                    <excludes>
+                        <exclude>lib/**</exclude>
+                    </excludes>
                 </configuration>
                 <executions>
                     <execution>
@@ -245,6 +247,38 @@
                     <mainClass>org.openjdk.jmh.Main</mainClass>
                     <classpathScope>test</classpathScope>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>javadoc-notices</id>
+                        <phase>package</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>jar</executable>
+                            <arguments>
+                                <argument>--update</argument>
+                                <argument>--file</argument>
+                                <argument>${project.build.directory}/${project.build.finalName}-javadoc.jar</argument>
+                                <argument>-C</argument>
+                                <argument>${project.build.outputDirectory}</argument>
+                                <argument>META-INF</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>verify-release</id>
+                        <phase>none</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>python3</executable>
+                            <arguments>
+                                <argument>${project.basedir}/../../scripts/release_licenses.py</argument>
+                                <argument>prepare-publish</argument>
+                                <argument>--version</argument>
+                                <argument>${project.version}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

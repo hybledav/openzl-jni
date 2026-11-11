@@ -5,6 +5,11 @@ on:
     branches: [ main, dev ]
   pull_request:
   workflow_dispatch:
+    inputs:
+      replace_deployment:
+        description: 'Optional validated deployment of this Maven version to replace'
+        required: false
+        type: string
 
 jobs:
   version:
@@ -139,6 +144,10 @@ jobs:
             cmake --build cmake_build --target openzl_jni
           fi
 
+      - name: Verify native dependency license texts
+        shell: bash
+        run: python3 scripts/release_licenses.py sources
+
       - name: Stage native artifact
         shell: bash
         run: |
@@ -157,6 +166,14 @@ jobs:
           else
             cp "cmake_build/cli/${{ matrix.lib-name }}" "$dest/"
           fi
+
+      - name: Collect Windows runtime license texts
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          python3 scripts/release_licenses.py windows-runtime \
+            --compiler-file cmake_build/native-compiler.txt \
+            --destination JNI/openzl-jni/src/main/resources/lib/windows_amd64
 
       - name: Set artifact version in POMs
         shell: bash
@@ -179,6 +196,12 @@ jobs:
           mvn -ntp -f JNI/pom.xml -pl openzl-jni -am \
             -Dplatform.classifier=${{ matrix.classifier }} \
             -Dgpg.skip=true -DskipTests clean package
+
+      - name: Verify packaged license texts
+        shell: bash
+        run: |
+          python3 scripts/release_licenses.py verify \
+            --version "${ARTIFACT_VERSION}" --classifier "${{ matrix.classifier }}"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -345,6 +368,8 @@ jobs:
 
       - name: Build and publish release
         shell: bash
+        env:
+          REPLACE_DEPLOYMENT: ${{ inputs.replace_deployment }}
         run: |
           set -euo pipefail
           classifiers=(linux_amd64 macos_arm64 windows_amd64)
@@ -365,7 +390,7 @@ jobs:
           mvn --batch-mode -ntp -f JNI/openzl-jni/pom.xml \
             -DskipTests \
             -Dgpg.passphraseServerId= \
-            clean package central-publishing:publish
+            clean package exec:exec@verify-release central-publishing:publish
           mkdir -p release-packages/base
           cp JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar release-packages/base/
           cp JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar.asc release-packages/base/ || true

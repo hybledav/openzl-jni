@@ -1,0 +1,225 @@
+{
+  "openzl_version": "0.2.0",
+  "components": [
+    {
+      "component": "OpenZL",
+      "version": "0.2.0",
+      "root": "openzl",
+      "source": "LICENSE",
+      "file": "OpenZL-LICENSE.txt",
+      "source_url": "https://github.com/meta/openzl/blob/v0.2.0/LICENSE",
+      "header": false,
+      "sha256": "371ed262b7969ba0a52f009588c0215df0e455c86b88356e8753748fad8296a5"
+    },
+    {
+      "component": "Protobuf",
+      "version": "32.0",
+      "root": "protobuf",
+      "source": "LICENSE",
+      "file": "Protobuf-LICENSE.txt",
+      "source_url": "https://github.com/protocolbuffers/protobuf/blob/v32.0/LICENSE",
+      "header": false,
+      "sha256": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d"
+    },
+    {
+      "component": "Abseil",
+      "version": "20250512.1",
+      "root": "absl",
+      "source": "LICENSE",
+      "file": "Abseil-LICENSE.txt",
+      "source_url": "https://github.com/abseil/abseil-cpp/blob/20250512.1/LICENSE",
+      "header": false,
+      "sha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747"
+    },
+    {
+      "component": "utf8_range",
+      "version": "Protobuf 32.0",
+      "root": "protobuf",
+      "source": "third_party/utf8_range/LICENSE",
+      "file": "utf8_range-LICENSE.txt",
+      "source_url": "https://github.com/protocolbuffers/protobuf/blob/v32.0/third_party/utf8_range/LICENSE",
+      "header": false,
+      "sha256": "02de69b64fc36d9e938f418e52723e42f0b2b226d58a9cb3c8dcbdf7059f5074"
+    },
+    {
+      "component": "Zstandard",
+      "version": "1.5.7",
+      "root": "openzl",
+      "source": "deps/zstd/LICENSE",
+      "file": "Zstandard-LICENSE.txt",
+      "source_url": "https://github.com/facebook/zstd/blob/v1.5.7/LICENSE",
+      "header": false,
+      "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+    },
+    {
+      "component": "LZ4 library",
+      "version": "1.10.0",
+      "root": "openzl",
+      "source": "deps/lz4/lib/LICENSE",
+      "file": "LZ4-LICENSE.txt",
+      "source_url": "https://github.com/lz4/lz4/blob/v1.10.0/lib/LICENSE",
+      "header": false,
+      "sha256": "8b58c446121a109ccf32edc094bba3010a3d85e4ee3702950db55e4d3e87736c"
+    },
+    {
+      "component": "XGBoost",
+      "version": "3.1.0",
+      "root": "xgboost",
+      "source": "LICENSE",
+      "file": "XGBoost-LICENSE.txt",
+      "source_url": "https://github.com/dmlc/xgboost/blob/v3.1.0/LICENSE",
+      "header": false,
+      "sha256": "b96f9cead5f4ea4c0a217bd9d879427443a353598fb72694f2d8c4428b53a6af"
+    },
+    {
+      "component": "dmlc-core",
+      "version": "8986b0598df709117570984571476c3614f55724",
+      "root": "xgboost",
+      "source": "dmlc-core/LICENSE",
+      "file": "dmlc-core-LICENSE.txt",
+      "source_url": "https://github.com/dmlc/dmlc-core/blob/8986b0598df709117570984571476c3614f55724/LICENSE",
+      "header": false,
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+    },
+    {
+      "component": "Ryu (within XGBoost)",
+      "version": "XGBoost 3.1.0",
+      "root": "xgboost",
+      "source": "src/common/charconv.cc",
+      "file": "Ryu-NOTICE.txt",
+      "source_url": "https://github.com/dmlc/xgboost/blob/v3.1.0/src/common/charconv.cc",
+      "header": true,
+      "sha256": "2590855a0d250623c3200de2218eb941db32cc7d1a00a8e21cfa81ac9fc33856"
+    },
+    {
+      "component": "xxHash (within OpenZL)",
+      "version": "OpenZL 0.2.0",
+      "root": "openzl",
+      "source": "src/openzl/shared/xxhash.h",
+      "file": "xxHash-OpenZL-LICENSE.txt",
+      "source_url": "https://github.com/meta/openzl/blob/v0.2.0/src/openzl/shared/xxhash.h",
+      "header": true,
+      "sha256": "c1ac3dce03d7380e184f29bec10aae9e7dd3bad080544b8ac6dacfcbba0d0f5b"
+    },
+    {
+      "component": "xxHash (within Zstandard)",
+      "version": "Zstandard 1.5.7",
+      "root": "openzl",
+      "source": "deps/zstd/lib/common/xxhash.h",
+      "file": "xxHash-Zstandard-LICENSE.txt",
+      "source_url": "https://github.com/facebook/zstd/blob/v1.5.7/lib/common/xxhash.h",
+      "header": true,
+      "sha256": "305a98499dcac175386474653b2355032da0105a4c78ebbbf3fe7d318151b6ea"
+    },
+    {
+      "component": "pdqsort (modified by OpenZL)",
+      "version": "OpenZL 0.2.0",
+      "root": "openzl",
+      "source": "src/openzl/shared/detail/pdqsort-inl.h",
+      "file": "pdqsort-LICENSE.txt",
+      "source_url": "https://github.com/meta/openzl/blob/v0.2.0/src/openzl/shared/detail/pdqsort-inl.h",
+      "header": true,
+      "sha256": "94855f99e736a03ac4803ca8f9a39c5621e333b3c01650e320c5a9e8723ff8f5"
+    },
+    {
+      "component": "FSE/HUF (within OpenZL)",
+      "version": "OpenZL 0.2.0",
+      "root": "openzl",
+      "source": "src/openzl/fse/common/entropy_common.c",
+      "file": "FSE-HUF-NOTICE.txt",
+      "source_url": "https://github.com/meta/openzl/blob/v0.2.0/src/openzl/fse/common/entropy_common.c",
+      "header": true,
+      "sha256": "0f68816fb16ec3f8f3c748bd3f7ea1deeb5f8ab055397d4cbb439274d348f6e9"
+    },
+    {
+      "component": "GSL attribution",
+      "version": "XGBoost 3.1.0",
+      "root": "xgboost",
+      "source": "include/xgboost/span.h",
+      "file": "GSL-NOTICE.txt",
+      "source_url": "https://github.com/dmlc/xgboost/blob/v3.1.0/include/xgboost/span.h",
+      "header": false,
+      "sha256": "6f4c9f7926d5e4ddaf2b654d965744814558c8d9dda0806e8eb3a4f02c1cecd0",
+      "header_block": true
+    },
+    {
+      "component": "ConcurrentQueue",
+      "version": "XGBoost 3.1.0",
+      "root": "xgboost",
+      "source": "dmlc-core/include/dmlc/concurrentqueue.h",
+      "file": "ConcurrentQueue-LICENSE.txt",
+      "source_url": "https://github.com/dmlc/dmlc-core/blob/8986b0598df709117570984571476c3614f55724/include/dmlc/concurrentqueue.h",
+      "header": false,
+      "sha256": "e5af2ba532fc8217d0fd76e63bdc136e1bef90a130c2cbb5173dee018cd6ab9e",
+      "line_count": 29
+    },
+    {
+      "component": "sweater attribution",
+      "version": "XGBoost 3.1.0",
+      "root": "xgboost",
+      "source": "src/common/threading_utils.cc",
+      "file": "sweater-NOTICE.txt",
+      "source_url": "https://github.com/dmlc/xgboost/blob/v3.1.0/src/common/threading_utils.cc",
+      "header": false,
+      "sha256": "bb5ba16b5ed2d914d012a6d96a120aea9258ad93d92f589cb80d343a645512dc",
+      "inner_comment": true
+    },
+    {
+      "component": "Microsoft GSL",
+      "version": "XGBoost 3.1.0",
+      "root": "external",
+      "source": "LICENSE",
+      "file": "GSL-LICENSE.txt",
+      "source_url": "https://github.com/microsoft/GSL/blob/v4.0.0/LICENSE",
+      "header": false,
+      "sha256": "4c21dc82a1c7186ea754fd59d504c00947953a3401fe8e24eaa44109ef8e2555"
+    },
+    {
+      "component": "sweater",
+      "version": "XGBoost 3.1.0",
+      "root": "external",
+      "source": "LICENSE",
+      "file": "sweater-LICENSE.txt",
+      "source_url": "https://github.com/psiha/sweater/blob/master/LICENSE",
+      "header": false,
+      "sha256": "951709d10f44723bc720e192147d80544ac859794bd51b37e91bb09fbb8505ca"
+    }
+  ],
+  "repositories": {
+    "openzl": {
+      "root": "openzl",
+      "path": ".",
+      "revision": "3dceb64867840201fb8f57a29d179995f700c9b8"
+    },
+    "protobuf": {
+      "root": "protobuf",
+      "path": ".",
+      "revision": "4fbd1111a292d04746c732573025e3251de0bb9c"
+    },
+    "absl": {
+      "root": "absl",
+      "path": ".",
+      "revision": "76bb24329e8bf5f39704eb10d21b9a80befa7c81"
+    },
+    "xgboost": {
+      "root": "xgboost",
+      "path": ".",
+      "revision": "ccb511768e13d1670c10be07dea89d0edca138f3"
+    },
+    "zstd": {
+      "root": "openzl",
+      "path": "deps/zstd",
+      "revision": "f8745da6ff1ad1e7bab384bd1f9d742439278e99"
+    },
+    "lz4": {
+      "root": "openzl",
+      "path": "deps/lz4",
+      "revision": "ebb370ca83af193212df4dcbadcc5d87bc0de2f0"
+    },
+    "dmlc-core": {
+      "root": "xgboost",
+      "path": "dmlc-core",
+      "revision": "8986b0598df709117570984571476c3614f55724"
+    }
+  }
+}
