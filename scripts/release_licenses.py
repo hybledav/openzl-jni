@@ -11,6 +11,7 @@ import shutil
 import subprocess
 from zipfile import ZipFile
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 from uuid import UUID
 
 REPO = Path(__file__).resolve().parents[1]
@@ -148,8 +149,14 @@ def drop_deployment(deployment, version):
     token = base64.b64encode(credentials.encode()).decode()
     headers = {"Authorization": f"Bearer {token}"}
     base = "https://central.sonatype.com/api/v1/publisher"
-    with urlopen(Request(f"{base}/status?id={deployment}", headers=headers, method="POST"), timeout=30) as response:
-        status = json.load(response)
+    try:
+        with urlopen(Request(f"{base}/status?id={deployment}", headers=headers, method="POST"), timeout=30) as response:
+            status = json.load(response)
+    except HTTPError as error:
+        if error.code != 404:
+            raise
+        print(f"Superseded private deployment {deployment} is already absent")
+        return
     expected = f"pkg:maven/io.github.hybledav/openzl-jni@{version}"
     if status["deploymentState"] != "VALIDATED" or expected not in status.get("purls", []):
         raise ValueError("The superseded deployment must be validated and contain this exact Maven version")
