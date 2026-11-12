@@ -203,6 +203,9 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
 ```
 
 Compression levels persist across profile changes and `reset()` on the same compressor.
+Use independent compressor instances for concurrent operations. Immutable
+`TrainedCompressor` candidates can be shared between instances. Caller-supplied
+output buffers must be writable, and input/output regions must not overlap.
 With OpenZL 0.3.0, `OpenZLGraph.NUMERIC` enables the Compression Transformer at
 level 7 and above. The `LZ` and `BIG_ENDIAN_*` profiles accept byte input.
 Use `configureProfile(OpenZLProfile.SDDL2, Map.of("TBD", descriptionPath))`

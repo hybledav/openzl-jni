@@ -1,0 +1,70 @@
+{
+  "version": "0.3.0-1",
+  "implementation_commit": "404da15",
+  "os": "Linux-6.14.0-37-generic-x86_64-with-glibc2.41",
+  "fresh_release_build": true,
+  "unit_tests": {
+    "jdk21_release": 209,
+    "jdk11_release": 209,
+    "jdk21_sanitized": 209
+  },
+  "stress": [
+    {
+      "variant": "jdk11",
+      "java": "openjdk version \"11.0.33\"",
+      "seed": 310024,
+      "iterations": 40000,
+      "all_phases_passed": true
+    },
+    {
+      "variant": "jdk17",
+      "java": "openjdk version \"17.0.17\"",
+      "seed": 5310024,
+      "iterations": 40000,
+      "all_phases_passed": true
+    },
+    {
+      "variant": "jdk21",
+      "java": "openjdk version \"21.0.9\"",
+      "seed": 310024,
+      "iterations": 40000,
+      "all_phases_passed": true
+    },
+    {
+      "variant": "jdk25",
+      "java": "openjdk version \"25.0.1\"",
+      "seed": 7310024,
+      "iterations": 40000,
+      "all_phases_passed": true
+    },
+    {
+      "variant": "sanitizers",
+      "java": "openjdk version \"21.0.9\"",
+      "seed": 9310024,
+      "iterations": 40000,
+      "all_phases_passed": true
+    }
+  ],
+  "total_stress_iterations": 200000,
+  "release_native_sha256": "9a1b9a617a4da29598ffb343d268fffea8fbec630d290f9b87b0e18932e48eac",
+  "sanitized_native_sha256": "0627e7be899762026f3b5773e0f575db93285d7abd5ea928b9b029a8147f3313",
+  "artifacts_sha256": {
+    "openzl-jni-0.3.0-1.jar": "1fdd1b866cdb84008eb2e959a9905ae5b8a29ec3ff9003985261944d3843ecad",
+    "openzl-jni-0.3.0-1-sources.jar": "52df2ef68e146f5f40dd9d44b08933409e5819818749b69e8f6aa97c1a1ed0cc",
+    "openzl-jni-0.3.0-1-javadoc.jar": "f2f17a745f212cc36d64211ac2a7b4d03cb99db090d61e42094e456e6f3f595c",
+    "openzl-jni-0.3.0-1-linux_amd64.jar": "2f259bc0841a50bd11f611d5e100d31d97ecc5daefb229b972514401329c8f84"
+  },
+  "old_new_frame_and_training_compatibility": true,
+  "source_and_archive_licenses_verified": true,
+  "missing_platform_release_gate_rejected": true,
+  "limitations": [
+    "Linux x86_64 only; no GitHub CI dispatch or push",
+    "UBSan disabled on flags_reflection, libprotobuf and libprotoc due GCC/Abseil constexpr issue; ASan retained",
+    "XGBoost/dmlc external build and assembly kernels are outside full sanitizer instrumentation",
+    "LeakSanitizer disabled for HotSpot; no leak-free or data-race-free certification"
+  ],
+  "validation_harness_sha256": {
+    "scripts/validate_native.py": "b21a6a66cd293473530996dc1f6158e258af0852dc6fcdda61caf075714bb734",
+    "scripts/validation/NativeStress.java": "41b83302a9c426d49f012ac714ca1bc4deeb50826b0d5e27cd4777c8ea6a2188"
+  }
+}

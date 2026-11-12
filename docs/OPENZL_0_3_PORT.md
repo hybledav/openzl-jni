@@ -43,6 +43,9 @@ References: [upstream release notes](https://github.com/meta/openzl/releases/tag
 
 ## Validation
 
+See the [expanded validation report](VALIDATION_0_3_0_1.md) for clean builds,
+sanitizers, the Java runtime matrix, stress results and guard defects fixed.
+
 `TestOpenZL03Compatibility` covers default/legacy frame versions, parameter
 persistence, LZ training, all six big-endian profiles and SDDL2 annotations.
 `TestOpenZL03Training` adds dictionary persistence, separate decoding, failed-load

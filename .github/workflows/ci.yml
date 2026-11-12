@@ -224,6 +224,24 @@ jobs:
             --current-base "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar" \
             --current-native "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}-linux_amd64.jar"
 
+      - name: Stress test JNI boundaries and corrupted inputs
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 scripts/validate_native.py \
+            --base-jar "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar" \
+            --native-jar "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}-linux_amd64.jar" \
+            --count 2000 --output "${RUNNER_TEMP}/openzl-native-validation"
+
+      - name: Upload native validation diagnostics
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openzl-native-validation
+          path: ${{ runner.temp }}/openzl-native-validation
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
