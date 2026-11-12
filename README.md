@@ -217,6 +217,9 @@ Pass `0` to restore the native default. Serialized compressor configurations
 have separate compatibility rules, and numeric graphs serialized by OpenZL
 0.3.0 require a 0.3.0 reader.
 
+The Protobuf conversion API writes the native default format (27); the format
+setting above applies to `OpenZLCompressor` instances.
+
 ---
 
 ## Training compressors from samples
@@ -240,6 +243,9 @@ try {
     Files.deleteIfExists(tmp);
 }
 ```
+
+Training returns self-contained serialized compressors. Upstream dictionary
+bundle training is not exposed by the current `byte[][]` return type.
 
 ## Planned features
 

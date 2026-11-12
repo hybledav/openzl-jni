@@ -1,0 +1,2 @@
+# Keep packaged legal documents byte-identical on all build platforms.
+JNI/openzl-jni/src/main/resources/META-INF/** -text -whitespace

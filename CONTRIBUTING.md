@@ -75,3 +75,13 @@ update or `0.3.0-1` for the first release with OpenZL 0.3.0.
 
 Run the CI workflow manually from the release commit. It checks the release
 number against Maven Central and stages the artifacts for approval in Sonatype.
+
+Before publishing, CI verifies the dependency license inventory and the finished
+base, source, Javadoc and platform archives. Windows runtime notices come from
+the selected compiler distribution.
+
+When correcting a private deployment of the same Maven version, enter its ID
+in the optional `replace_deployment` workflow input. After checking the new
+archives, CI verifies that the old deployment is validated and contains the
+same Maven coordinate, drops that private deployment, then uploads the
+corrected bundle for Sonatype validation.

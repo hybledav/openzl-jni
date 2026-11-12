@@ -13,13 +13,17 @@
 - [x] Configuration serialization (`serialize`, `serializeToJson`)
 - [x] Frame metadata inspection via `OpenZLCompressionInfo`
 - [x] Compression-level get/set with `OpenZLCompressionLevel`
-- [ ] Broader parameter management (format version, data arenas, custom parameters)
+- [x] Frame format version get/set, including format 24 for OpenZL 0.2.0 readers
+- [ ] Broader parameter management (custom parameters)
 
 ## Profiles & higher-level graphs
 - [x] Pre-built profiles exposed through `OpenZLProfile`
 - [x] Profile arguments via `configureProfile(OpenZLProfile, Map<String,String>)`
 - [x] Compression-level persistence across resets/profile switches
 - [x] CLI parity for profile discovery/training workflows
+- [x] OpenZL 0.3.0 LZ, big-endian numeric and SDDL2 profiles
+- [ ] Dictionary bundle training and loading for compression/decompression
+- [ ] Expose the upstream training candidate limit and target format
 
 ## SDDL and structured data
 - [x] SDDL compilation (`OpenZLSddl.compile`)

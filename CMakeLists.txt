@@ -137,3 +137,6 @@ endif()
 if(TARGET openzl_xgboost_imports)
     add_dependencies(openzl_jni openzl_xgboost_imports)
 endif()
+
+# Record the selected compiler for runtime notice collection.
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/native-compiler.txt" CONTENT "${CMAKE_CXX_COMPILER}\n")

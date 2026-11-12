@@ -1,0 +1,6 @@
+/**
+ * Modified from
+ * github.com/psiha/sweater/blob/master/include/boost/sweater/hardware_concurrency.hpp
+ *
+ * MIT License: Copyright (c) 2016 Domagoj Šarić
+ */

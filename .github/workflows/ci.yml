@@ -5,6 +5,11 @@ on:
     branches: [ main, dev ]
   pull_request:
   workflow_dispatch:
+    inputs:
+      replace_deployment:
+        description: 'Optional validated deployment of this Maven version to replace'
+        required: false
+        type: string
 
 jobs:
   version:
@@ -96,8 +101,13 @@ jobs:
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          if command -v cmake >/dev/null && command -v ninja >/dev/null; then
+            cmake --version
+            ninja --version
+          else
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          fi
 
       - name: Install build dependencies (macOS)
         if: runner.os == 'macOS'
@@ -139,6 +149,10 @@ jobs:
             cmake --build cmake_build --target openzl_jni
           fi
 
+      - name: Verify native dependency license texts
+        shell: bash
+        run: python3 scripts/release_licenses.py sources
+
       - name: Stage native artifact
         shell: bash
         run: |
@@ -157,6 +171,14 @@ jobs:
           else
             cp "cmake_build/cli/${{ matrix.lib-name }}" "$dest/"
           fi
+
+      - name: Collect Windows runtime license texts
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          python3 scripts/release_licenses.py windows-runtime \
+            --compiler-file cmake_build/native-compiler.txt \
+            --destination JNI/openzl-jni/src/main/resources/lib/windows_amd64
 
       - name: Set artifact version in POMs
         shell: bash
@@ -179,6 +201,27 @@ jobs:
           mvn -ntp -f JNI/pom.xml -pl openzl-jni -am \
             -Dplatform.classifier=${{ matrix.classifier }} \
             -Dgpg.skip=true -DskipTests clean package
+
+      - name: Verify packaged license texts
+        shell: bash
+        run: |
+          python3 scripts/release_licenses.py verify \
+            --version "${ARTIFACT_VERSION}" --classifier "${{ matrix.classifier }}"
+
+      - name: Check frame compatibility with the published OpenZL 0.2.0 binary
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # JNI 0.2.1 embeds OpenZL 0.2.0; use this established public artifact.
+          previous="${RUNNER_TEMP}/openzl-previous"
+          mkdir -p "$previous"
+          base="https://repo.maven.apache.org/maven2/io/github/hybledav/openzl-jni/0.2.1/openzl-jni-0.2.1"
+          curl --fail --location --retry 3 "$base.jar" -o "$previous/base.jar"
+          curl --fail --location --retry 3 "$base-linux_amd64.jar" -o "$previous/native.jar"
+          python3 scripts/check_frame_compatibility.py \
+            --previous-base "$previous/base.jar" --previous-native "$previous/native.jar" \
+            --current-base "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar" \
+            --current-native "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}-linux_amd64.jar"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -207,8 +250,13 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          if command -v cmake >/dev/null && command -v ninja >/dev/null; then
+            cmake --version
+            ninja --version
+          else
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          fi
 
       - name: Configure CMake
         run: cmake -S . -B cmake_build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -345,6 +393,8 @@ jobs:
 
       - name: Build and publish release
         shell: bash
+        env:
+          REPLACE_DEPLOYMENT: ${{ inputs.replace_deployment }}
         run: |
           set -euo pipefail
           classifiers=(linux_amd64 macos_arm64 windows_amd64)
@@ -365,7 +415,7 @@ jobs:
           mvn --batch-mode -ntp -f JNI/openzl-jni/pom.xml \
             -DskipTests \
             -Dgpg.passphraseServerId= \
-            clean package central-publishing:publish
+            clean package exec:exec@verify-release central-publishing:publish
           mkdir -p release-packages/base
           cp JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar release-packages/base/
           cp JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar.asc release-packages/base/ || true
