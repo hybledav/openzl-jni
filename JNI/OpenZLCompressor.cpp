@@ -1,9 +1,11 @@
 #include "OpenZLCompressor.h"
 #include "OpenZLNativeSupport.h"
 #include "openzl/cpp/CParam.hpp"
+#include "openzl/cpp/CCtx.hpp"
 #include "openzl/cpp/Compressor.hpp"
 #include "openzl/zl_compress.h"
 #include "openzl/zl_version.h"
+#include "openzl/codecs/zl_brute_force_selector.h"
 #include "cli/utils/compress_profiles.h"
 #include "cli/utils/util.h"
 #include "custom_parsers/sddl/sddl_profile.h"
@@ -25,6 +27,26 @@
 #include <vector>
 
 namespace {
+
+std::string copyArrayBytes(JNIEnv* env, jbyteArray array)
+{
+    if (!array) throw std::invalid_argument("Byte array is required");
+    std::string bytes(static_cast<size_t>(env->GetArrayLength(array)), '\0');
+    if (!bytes.empty()) {
+        env->GetByteArrayRegion(array, 0, static_cast<jsize>(bytes.size()), reinterpret_cast<jbyte*>(bytes.data()));
+    }
+    return bytes;
+}
+
+std::string copyJavaString(JNIEnv* env, jstring value)
+{
+    if (!value) throw std::invalid_argument("String is required");
+    const char* chars = env->GetStringUTFChars(value, nullptr);
+    if (!chars) return {};
+    std::string result(chars);
+    env->ReleaseStringUTFChars(value, chars);
+    return result;
+}
 
 openzl::cli::ProfileArgs makeProfileArgs(
         const std::string& profile,
@@ -55,7 +77,11 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
         jint maxTimeSecs,
         jint threads,
         jint numSamples,
-        jboolean pareto)
+        jboolean pareto,
+        jint maxNumCandidates = 0,
+        jint formatVersion = 0,
+        bool dictionaryTraining = false,
+        bool returnCandidates = false)
 {
     const auto& profiles = openzl::cli::compressProfiles();
     auto it = profiles.find(profile);
@@ -66,6 +92,9 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
     }
 
     try {
+        if (maxTimeSecs < 0 || threads < 0 || numSamples < 0 || maxNumCandidates < 0 || formatVersion < 0) {
+            throw std::invalid_argument("Training limits and formatVersion must not be negative");
+        }
         openzl::tools::io::InputSetDir set(dir, false);
         std::vector<openzl::training::MultiInput> multi;
         for (const auto& inp : set) {
@@ -73,13 +102,17 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
             mi.add(inp);
             multi.emplace_back(std::move(mi));
         }
+        if (multi.empty()) {
+            throw std::invalid_argument("Training directory must contain samples");
+        }
 
         openzl::Compressor compressor;
         auto args = makeProfileArgs(profile);
         auto* profilePtr = it->second.get();
         ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
         compressor.selectStartingGraph(gid);
-        compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
+        compressor.setParameter(openzl::CParam::FormatVersion,
+                formatVersion == 0 ? ZL_getDefaultEncodingVersion() : formatVersion);
 
         openzl::training::TrainParams params;
         if (threads > 0) {
@@ -92,6 +125,12 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
             params.maxTimeSecs = static_cast<size_t>(maxTimeSecs);
         }
         params.paretoFrontier = pareto != JNI_FALSE;
+        params.dictTraining = dictionaryTraining;
+        if (maxNumCandidates > 0) {
+            // Upstream crowding-distance pruning needs six points (three objectives).
+            // Prune safely there, then apply the requested public result limit below.
+            params.maxNumCandidates = static_cast<size_t>(maxNumCandidates < 6 ? 6 : maxNumCandidates);
+        }
 
         params.compressorGenFunc = [profilePtr, args](
                 openzl::poly::string_view serialized,
@@ -107,11 +146,20 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
         };
 
         auto trained = openzl::training::train(multi, compressor, params);
+        if (maxNumCandidates > 0 && trained.size() > static_cast<size_t>(maxNumCandidates)) {
+            trained.resize(static_cast<size_t>(maxNumCandidates));
+        }
 
-        jclass byteArrClass = env->FindClass("[B");
+        jclass byteArrClass = env->FindClass(returnCandidates
+                ? "io/github/hybledav/TrainedCompressor" : "[B");
         if (!byteArrClass) {
             return nullptr;
         }
+        jmethodID constructor = returnCandidates
+                ? env->GetMethodID(byteArrClass, "<init>", "(Ljava/lang/String;[B[B)V") : nullptr;
+        if (returnCandidates && !constructor) return nullptr;
+        jstring profileName = returnCandidates ? env->NewStringUTF(profile.c_str()) : nullptr;
+        if (returnCandidates && !profileName) return nullptr;
         jobjectArray out = env->NewObjectArray(static_cast<jsize>(trained.size()), byteArrClass, nullptr);
         if (out == nullptr) {
             return nullptr;
@@ -129,10 +177,31 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
                         static_cast<jsize>(serialized.size()),
                         reinterpret_cast<const jbyte*>(serialized.data()));
             }
-            env->SetObjectArrayElement(out, static_cast<jsize>(i), ba);
+            if (env->ExceptionCheck()) return nullptr;
+            if (returnCandidates) {
+                const std::string bundle = trained[i].dicts.empty() ? std::string() : trained[i].packFatBundle();
+                jbyteArray dict = env->NewByteArray(static_cast<jsize>(bundle.size()));
+                if (!dict) return nullptr;
+                if (!bundle.empty()) {
+                    env->SetByteArrayRegion(dict, 0, static_cast<jsize>(bundle.size()),
+                            reinterpret_cast<const jbyte*>(bundle.data()));
+                    if (env->ExceptionCheck()) return nullptr;
+                }
+                jobject candidate = env->NewObject(byteArrClass, constructor, profileName, ba, dict);
+                if (!candidate) return nullptr;
+                env->SetObjectArrayElement(out, static_cast<jsize>(i), candidate);
+                env->DeleteLocalRef(candidate);
+                env->DeleteLocalRef(dict);
+            } else {
+                env->SetObjectArrayElement(out, static_cast<jsize>(i), ba);
+            }
             env->DeleteLocalRef(ba);
+            if (env->ExceptionCheck()) return nullptr;
         }
         return out;
+    } catch (const std::invalid_argument& ex) {
+        throwIllegalArgument(env, ex.what());
+        return nullptr;
     } catch (const openzl::cli::InvalidArgsException& ex) {
         throwIllegalArgument(env, ex.what());
         return nullptr;
@@ -143,6 +212,116 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
 }
 
 } // namespace
+
+extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainCandidatesFromDirectoryNative(
+        JNIEnv* env, jclass, jstring profileName, jstring directory,
+        jint maxTimeSecs, jint threads, jint numSamples, jboolean pareto,
+        jint maxNumCandidates, jint formatVersion, jboolean dictionaryTraining)
+{
+    try {
+        const auto profile = copyJavaString(env, profileName);
+        if (env->ExceptionCheck()) return nullptr;
+        const auto path = copyJavaString(env, directory);
+        if (env->ExceptionCheck()) return nullptr;
+        return trainFromDirectoryImpl(env, profile, path, maxTimeSecs, threads, numSamples, pareto,
+                maxNumCandidates, formatVersion, dictionaryTraining != JNI_FALSE, true);
+    } catch (const std::exception& ex) {
+        throwIllegalArgument(env, ex.what());
+        return nullptr;
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureTrainedNative(
+        JNIEnv* env, jobject obj, jstring profileName, jbyteArray serialized, jbyteArray dictionaryBundle)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "configureTrained")) return;
+    try {
+        const auto profile = copyJavaString(env, profileName);
+        if (env->ExceptionCheck()) return;
+        const auto graphBytes = copyArrayBytes(env, serialized);
+        if (env->ExceptionCheck()) return;
+        const auto bundle = copyArrayBytes(env, dictionaryBundle);
+        if (env->ExceptionCheck()) return;
+        const auto& profiles = openzl::cli::compressProfiles();
+        auto it = profiles.find(profile);
+        if (it == profiles.end()) throw std::invalid_argument("Unknown compression profile: " + profile);
+        openzl::Compressor compressor;
+        compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
+        auto args = makeProfileArgs(profile);
+        auto* definition = it->second.get();
+        compressor.selectStartingGraph(definition->gen(compressor.get(),
+                definition->opaque ? definition->opaque.get() : nullptr, args));
+        compressor.deserialize(graphBytes, bundle);
+        if (compressor.getParameter(openzl::CParam::FormatVersion) == 0) {
+            compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
+        }
+        std::unique_ptr<openzl::FatBundleDictLoader> loader;
+        if (!bundle.empty()) {
+            loader = std::make_unique<openzl::FatBundleDictLoader>();
+            loader->loadFatBundle(bundle);
+        }
+        const auto graph = compressor.getStartingGraph();
+        openzl::unwrap(ZL_CCtx_resetParameters(state->cctx));
+        openzl::unwrap(ZL_DCtx_resetParameters(state->dctx));
+        state->compressor = std::move(compressor);
+        state->startingGraph = graph;
+        state->dictionaryLoader = std::move(loader);
+        state->reset();
+    } catch (const std::exception& ex) {
+        throwIllegalArgument(env, ex.what());
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setDictionaryBundleNative(
+        JNIEnv* env, jobject obj, jbyteArray dictionaryBundle)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "setDictionaryBundle")) return;
+    try {
+        const auto bundle = copyArrayBytes(env, dictionaryBundle);
+        if (env->ExceptionCheck()) return;
+        state->setDictionaryBundle(bundle);
+    } catch (const std::exception& ex) {
+        throwIllegalArgument(env, ex.what());
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureBruteForceNative(
+        JNIEnv* env, jobject obj, jintArray candidates)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "configureBruteForce")) return;
+    try {
+        const jsize count = env->GetArrayLength(candidates);
+        std::vector<jint> ids(static_cast<size_t>(count));
+        env->GetIntArrayRegion(candidates, 0, count, ids.data());
+        if (env->ExceptionCheck()) return;
+        std::vector<ZL_GraphID> graphs;
+        for (const auto id : ids) graphs.push_back(graphIdFromOrdinal(id));
+        state->setGraph(openzl::unwrap(ZL_Compressor_buildBruteForceSelectorGraph(
+                state->compressor.get(), graphs.data(), graphs.size())));
+    } catch (const std::exception& ex) {
+        throwIllegalArgument(env, ex.what());
+    }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_serializeCompressorNative(
+        JNIEnv* env, jobject obj)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "serializeCompressor")) return nullptr;
+    try {
+        const auto bytes = state->compressor.serialize();
+        jbyteArray output = env->NewByteArray(static_cast<jsize>(bytes.size()));
+        if (output) env->SetByteArrayRegion(output, 0, static_cast<jsize>(bytes.size()),
+                reinterpret_cast<const jbyte*>(bytes.data()));
+        return output;
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
 
 extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_nativeCreate(JNIEnv*, jobject, jint graphOrdinal)
 {
@@ -325,6 +504,8 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_confi
 
     try {
         auto args = makeProfileArgs(profile, profileArgs);
+        const int compressionLevel = state->compressor.getParameter(openzl::CParam::CompressionLevel);
+        if (compressionLevel > 0) args.setRequestedCompressionLevel(compressionLevel);
         auto* profilePtr = it->second.get();
         ZL_GraphID graph = profilePtr->gen(
                 state->compressor.get(),
@@ -563,246 +744,73 @@ cleanup:
     return result;
 }
 
-// Compress a single input using the given profile (untrained/default compressor)
-extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressWithProfileNative(JNIEnv* env,
-        jclass,
-        jstring profileName,
-        jbyteArray input)
+// These entry points retain the legacy byte[][] API while honoring saved parameters.
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressWithProfileNative(
+        JNIEnv* env, jclass, jstring profileName, jbyteArray input)
 {
-    if (profileName == nullptr) {
-        throwNew(env, JniRefs().nullPointerException, "profileName");
+    if (!profileName || !input) {
+        throwNew(env, JniRefs().nullPointerException, "profileName and input are required");
         return nullptr;
     }
-    if (input == nullptr) {
-        throwNew(env, JniRefs().nullPointerException, "input");
-        return nullptr;
-    }
-
-    const char* profileChars = env->GetStringUTFChars(profileName, nullptr);
-    if (!profileChars) {
-        throwNew(env, JniRefs().outOfMemoryError, "Unable to access profileName");
-        return nullptr;
-    }
-    std::string profile(profileChars);
-    env->ReleaseStringUTFChars(profileName, profileChars);
-
-    const auto& profiles = openzl::cli::compressProfiles();
-    auto it = profiles.find(profile);
-    if (it == profiles.end()) {
-        throwIllegalArgument(env, std::string("Unknown compression profile: ") + profile);
-        return nullptr;
-    }
-
-    jsize len = env->GetArrayLength(input);
-    void* srcPtr = env->GetPrimitiveArrayCritical(input, nullptr);
-    if (srcPtr == nullptr) {
-        throwNew(env, JniRefs().outOfMemoryError, "GetPrimitiveArrayCritical returned null");
-        return nullptr;
-    }
-
     try {
+        const auto profile = copyJavaString(env, profileName);
+        if (env->ExceptionCheck()) return nullptr;
+        const auto bytes = copyArrayBytes(env, input);
+        if (env->ExceptionCheck()) return nullptr;
+        const auto& profiles = openzl::cli::compressProfiles();
+        auto it = profiles.find(profile);
+        if (it == profiles.end()) throw std::invalid_argument("Unknown compression profile: " + profile);
         openzl::Compressor compressor;
+        compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
         auto args = makeProfileArgs(profile);
-        auto* profilePtr = it->second.get();
-        ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
-        compressor.selectStartingGraph(gid);
-
-        // Create a temporary C context and compress
-        ZL_CCtx* cctx = ZL_CCtx_create();
-        if (!cctx) {
-            env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
-            throwNew(env, JniRefs().outOfMemoryError, "Failed to create C context");
-            return nullptr;
-        }
-        // Apply default C context parameters similar to NativeState::applyDefaultParameters
-        ZL_Report rp;
-        rp = ZL_CCtx_setParameter(cctx, ZL_CParam_stickyParameters, 1);
-        if (ZL_isError(rp)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to set cctx parameter stickyParameters");
-            return nullptr;
-        }
-        rp = ZL_CCtx_setParameter(cctx, ZL_CParam_compressionLevel, ZL_COMPRESSIONLEVEL_DEFAULT);
-        if (ZL_isError(rp)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to set cctx parameter compressionLevel");
-            return nullptr;
-        }
-        rp = ZL_CCtx_setParameter(cctx, ZL_CParam_formatVersion, ZL_getDefaultEncodingVersion());
-        if (ZL_isError(rp)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to set cctx parameter formatVersion");
-            return nullptr;
-        }
-
-        ZL_Report r1 = ZL_CCtx_refCompressor(cctx, compressor.get());
-        if (ZL_isError(r1)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to bind compressor to C context");
-            return nullptr;
-        }
-        ZL_Report r2 = ZL_CCtx_selectStartingGraphID(cctx, compressor.get(), gid, nullptr);
-        if (ZL_isError(r2)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to select starting graph");
-            return nullptr;
-        }
-
-        size_t bound = ZL_compressBound(static_cast<size_t>(len));
-        std::unique_ptr<uint8_t[]> dst(new uint8_t[bound]);
-        ZL_Report result = ZL_CCtx_compress(cctx, dst.get(), bound, srcPtr, static_cast<size_t>(len));
-        env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
-        ZL_CCtx_free(cctx);
-        if (ZL_isError(result)) {
-            throwIllegalState(env, "Compression failed for profile compressor");
-            return nullptr;
-        }
-        size_t compressedSize = ZL_RES_value(result);
-        jbyteArray out = env->NewByteArray(static_cast<jsize>(compressedSize));
-        if (compressedSize > 0) {
-            env->SetByteArrayRegion(out, 0, static_cast<jsize>(compressedSize), reinterpret_cast<const jbyte*>(dst.get()));
-        }
-        return out;
+        auto* definition = it->second.get();
+        compressor.selectStartingGraph(definition->gen(compressor.get(),
+                definition->opaque ? definition->opaque.get() : nullptr, args));
+        openzl::CCtx context;
+        context.refCompressor(compressor);
+        const auto compressed = context.compressSerial(bytes);
+        jbyteArray output = env->NewByteArray(static_cast<jsize>(compressed.size()));
+        if (output) env->SetByteArrayRegion(output, 0, static_cast<jsize>(compressed.size()),
+                reinterpret_cast<const jbyte*>(compressed.data()));
+        return output;
     } catch (const std::exception& ex) {
-        env->ReleasePrimitiveArrayCritical(input, srcPtr, JNI_ABORT);
         throwIllegalState(env, ex.what());
         return nullptr;
     }
 }
 
-// Compress a single input using a serialized compressor blob. The first jstring is the profile name
-// (used as a hint to initialize necessary components before deserializing), second arg is serialized bytes,
-// third is the input.
-extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressWithSerializedNative(JNIEnv* env,
-        jclass,
-        jstring profileName,
-        jbyteArray serialized,
-        jbyteArray input)
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressWithSerializedNative(
+        JNIEnv* env, jclass, jstring profileName, jbyteArray serialized, jbyteArray input)
 {
-    if (profileName == nullptr) {
-        throwNew(env, JniRefs().nullPointerException, "profileName");
+    if (!profileName || !serialized || !input) {
+        throwNew(env, JniRefs().nullPointerException, "profileName, serialized and input are required");
         return nullptr;
     }
-    if (serialized == nullptr) {
-        throwNew(env, JniRefs().nullPointerException, "serialized");
-        return nullptr;
-    }
-    if (input == nullptr) {
-        throwNew(env, JniRefs().nullPointerException, "input");
-        return nullptr;
-    }
-
-    const char* profileChars = env->GetStringUTFChars(profileName, nullptr);
-    if (!profileChars) {
-        throwNew(env, JniRefs().outOfMemoryError, "Unable to access profileName");
-        return nullptr;
-    }
-    std::string profile(profileChars);
-    env->ReleaseStringUTFChars(profileName, profileChars);
-
-    jsize serLen = env->GetArrayLength(serialized);
-    jbyte* serPtr = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(serialized, nullptr));
-    if (serPtr == nullptr) {
-        throwNew(env, JniRefs().outOfMemoryError, "Failed to access serialized array");
-        return nullptr;
-    }
-
-    jsize inLen = env->GetArrayLength(input);
-    void* inPtr = env->GetPrimitiveArrayCritical(input, nullptr);
-    if (inPtr == nullptr) {
-        env->ReleasePrimitiveArrayCritical(serialized, serPtr, JNI_ABORT);
-        throwNew(env, JniRefs().outOfMemoryError, "Failed to access input array");
-        return nullptr;
-    }
-
     try {
-        // Prepare compressor by initializing profile components
-        openzl::Compressor compressor;
+        const auto profile = copyJavaString(env, profileName);
+        if (env->ExceptionCheck()) return nullptr;
+        const auto graphBytes = copyArrayBytes(env, serialized);
+        if (env->ExceptionCheck()) return nullptr;
+        const auto bytes = copyArrayBytes(env, input);
+        if (env->ExceptionCheck()) return nullptr;
         const auto& profiles = openzl::cli::compressProfiles();
         auto it = profiles.find(profile);
-        if (it != profiles.end()) {
-            auto args = makeProfileArgs(profile);
-            auto* profilePtr = it->second.get();
-            try {
-                ZL_GraphID gid = profilePtr->gen(compressor.get(), profilePtr->opaque ? profilePtr->opaque.get() : nullptr, args);
-                compressor.selectStartingGraph(gid);
-            } catch (...) {
-                // ignore: profile init best-effort
-            }
-        }
-
-        // Attempt deserialize
-        std::string_view sv(reinterpret_cast<const char*>(serPtr), static_cast<size_t>(serLen));
-        compressor.deserialize(openzl::poly::string_view(sv.data(), sv.size()));
-
-        // Use compressor via a temporary C ctx
-        ZL_CCtx* cctx = ZL_CCtx_create();
-        if (!cctx) {
-            env->ReleasePrimitiveArrayCritical(serialized, serPtr, JNI_ABORT);
-            env->ReleasePrimitiveArrayCritical(input, inPtr, JNI_ABORT);
-            throwNew(env, JniRefs().outOfMemoryError, "Failed to create C context");
-            return nullptr;
-        }
-        // Ensure C context has sensible defaults
-        ZL_Report rp2;
-        rp2 = ZL_CCtx_setParameter(cctx, ZL_CParam_stickyParameters, 1);
-        if (ZL_isError(rp2)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(serialized, serPtr, JNI_ABORT);
-            env->ReleasePrimitiveArrayCritical(input, inPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to set cctx parameter stickyParameters");
-            return nullptr;
-        }
-        rp2 = ZL_CCtx_setParameter(cctx, ZL_CParam_compressionLevel, ZL_COMPRESSIONLEVEL_DEFAULT);
-        if (ZL_isError(rp2)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(serialized, serPtr, JNI_ABORT);
-            env->ReleasePrimitiveArrayCritical(input, inPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to set cctx parameter compressionLevel");
-            return nullptr;
-        }
-        rp2 = ZL_CCtx_setParameter(cctx, ZL_CParam_formatVersion, ZL_getDefaultEncodingVersion());
-        if (ZL_isError(rp2)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(serialized, serPtr, JNI_ABORT);
-            env->ReleasePrimitiveArrayCritical(input, inPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to set cctx parameter formatVersion");
-            return nullptr;
-        }
-
-        ZL_Report r1 = ZL_CCtx_refCompressor(cctx, compressor.get());
-        if (ZL_isError(r1)) {
-            ZL_CCtx_free(cctx);
-            env->ReleasePrimitiveArrayCritical(serialized, serPtr, JNI_ABORT);
-            env->ReleasePrimitiveArrayCritical(input, inPtr, JNI_ABORT);
-            throwIllegalState(env, "Failed to bind compressor to C context");
-            return nullptr;
-        }
-
-        size_t bound = ZL_compressBound(static_cast<size_t>(inLen));
-        std::unique_ptr<uint8_t[]> dst(new uint8_t[bound]);
-        ZL_Report result = ZL_CCtx_compress(cctx, dst.get(), bound, inPtr, static_cast<size_t>(inLen));
-        env->ReleasePrimitiveArrayCritical(serialized, serPtr, JNI_ABORT);
-        env->ReleasePrimitiveArrayCritical(input, inPtr, JNI_ABORT);
-        ZL_CCtx_free(cctx);
-        if (ZL_isError(result)) {
-            throwIllegalState(env, "Compression failed for serialized compressor");
-            return nullptr;
-        }
-        size_t compressedSize = ZL_RES_value(result);
-        jbyteArray out = env->NewByteArray(static_cast<jsize>(compressedSize));
-        if (compressedSize > 0) {
-            env->SetByteArrayRegion(out, 0, static_cast<jsize>(compressedSize), reinterpret_cast<const jbyte*>(dst.get()));
-        }
-        return out;
+        if (it == profiles.end()) throw std::invalid_argument("Unknown compression profile: " + profile);
+        openzl::Compressor compressor;
+        compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
+        auto args = makeProfileArgs(profile);
+        auto* definition = it->second.get();
+        compressor.selectStartingGraph(definition->gen(compressor.get(),
+                definition->opaque ? definition->opaque.get() : nullptr, args));
+        compressor.deserialize(graphBytes);
+        openzl::CCtx context;
+        context.refCompressor(compressor);
+        const auto compressed = context.compressSerial(bytes);
+        jbyteArray output = env->NewByteArray(static_cast<jsize>(compressed.size()));
+        if (output) env->SetByteArrayRegion(output, 0, static_cast<jsize>(compressed.size()),
+                reinterpret_cast<const jbyte*>(compressed.data()));
+        return output;
     } catch (const std::exception& ex) {
-        env->ReleasePrimitiveArrayCritical(serialized, serPtr, JNI_ABORT);
-        env->ReleasePrimitiveArrayCritical(input, inPtr, JNI_ABORT);
         throwIllegalState(env, ex.what());
         return nullptr;
     }

@@ -1,0 +1,16 @@
+# Keep a trained compressor's target format effective in Protobuf conversion.
+set(PROTOBUF_SERIALIZER_HEADER "${openzl_SOURCE_DIR}/tools/protobuf/ProtoSerializer.h")
+file(READ "${PROTOBUF_SERIALIZER_HEADER}" PROTOBUF_SERIALIZER_SOURCE)
+set(PROTOBUF_FORMAT_OVERRIDE "cctx_.setParameter(CParam::FormatVersion, ZL_MAX_FORMAT_VERSION);")
+set(PROTOBUF_FORMAT_MARKER "// openzl-jni: inherit the compressor's target format.")
+string(FIND "${PROTOBUF_SERIALIZER_SOURCE}" "${PROTOBUF_FORMAT_OVERRIDE}" PROTOBUF_OVERRIDE_POSITION)
+if(NOT PROTOBUF_OVERRIDE_POSITION EQUAL -1)
+    string(REPLACE "${PROTOBUF_FORMAT_OVERRIDE}" "${PROTOBUF_FORMAT_MARKER}"
+        PROTOBUF_SERIALIZER_SOURCE "${PROTOBUF_SERIALIZER_SOURCE}")
+    file(WRITE "${PROTOBUF_SERIALIZER_HEADER}" "${PROTOBUF_SERIALIZER_SOURCE}")
+else()
+    string(FIND "${PROTOBUF_SERIALIZER_SOURCE}" "${PROTOBUF_FORMAT_MARKER}" PROTOBUF_MARKER_POSITION)
+    if(PROTOBUF_MARKER_POSITION EQUAL -1)
+        message(FATAL_ERROR "Review the OpenZL Protobuf context patch for the selected upstream version")
+    endif()
+endif()

@@ -47,6 +47,13 @@ JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainNat
         jstring, jobjectArray, jint, jint, jint, jboolean);
 JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainFromDirectoryNative(JNIEnv*, jclass,
         jstring, jstring, jint, jint, jint, jboolean);
+JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainCandidatesFromDirectoryNative(JNIEnv*, jclass,
+        jstring, jstring, jint, jint, jint, jboolean, jint, jint, jboolean);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureTrainedNative(JNIEnv*, jobject,
+        jstring, jbyteArray, jbyteArray);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setDictionaryBundleNative(JNIEnv*, jobject, jbyteArray);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureBruteForceNative(JNIEnv*, jobject, jintArray);
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_serializeCompressorNative(JNIEnv*, jobject);
 
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressWithProfileNative(JNIEnv*, jclass,
         jstring, jbyteArray);

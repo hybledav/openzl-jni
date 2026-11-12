@@ -300,6 +300,7 @@ public final class OpenZLProtobuf {
         }
 
         TrainOptions opts = options == null ? new TrainOptions() : options;
+        opts.requireSelfContained();
         OpenZLNative.load();
         byte[][] trained = trainNative(samples,
                 inputProtocol.id(),
@@ -307,6 +308,8 @@ public final class OpenZLProtobuf {
                 opts.threads,
                 opts.numSamples,
                 opts.paretoFrontier,
+                opts.maxNumCandidates,
+                opts.formatVersion,
                 messageType);
         if (trained == null) {
             throw new IllegalStateException("Native protobuf training failed");
@@ -712,6 +715,8 @@ public final class OpenZLProtobuf {
             int threads,
             int numSamples,
             boolean pareto,
+            int maxNumCandidates,
+            int formatVersion,
             String messageType);
 
     private static native void configureTrainingNative(String messageType, int minSamples);

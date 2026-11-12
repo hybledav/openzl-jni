@@ -1,5 +1,6 @@
 #include "OpenZLNativeSupport.h"
 #include "openzl/zl_version.h"
+#include "openzl/codecs/zl_transformer.h"
 
 #include <array>
 #include <cstdio>
@@ -18,7 +19,7 @@ constexpr int MAX_GLOBAL_CACHE = 8;
 NativeState* globalCache[MAX_GLOBAL_CACHE];
 int globalCacheSize = 0;
 std::mutex globalCacheMutex;
-thread_local NativeState* tlsCachedState = nullptr;
+thread_local std::unique_ptr<NativeState> tlsCachedState;
 
 jclass makeGlobalClassRef(JNIEnv* env, const char* name)
 {
@@ -142,8 +143,22 @@ void NativeState::reset()
     expectSuccess(ZL_CCtx_resetParameters(cctx), "ZL_CCtx_resetParameters");
     expectSuccess(ZL_DCtx_resetParameters(dctx), "ZL_DCtx_resetParameters");
     applyDefaultParameters();
+    ZL_DCtx_refDictLoader(dctx, dictionaryLoader
+            ? ZL_FatBundleDictLoader_getDictLoader(dictionaryLoader->get()) : nullptr);
     configureGraph();
     outputScratch.reset();
+}
+
+void NativeState::setDictionaryBundle(const std::string& bundle)
+{
+    std::unique_ptr<openzl::FatBundleDictLoader> loader;
+    if (!bundle.empty()) {
+        loader = std::make_unique<openzl::FatBundleDictLoader>();
+        loader->loadFatBundle(bundle);
+    }
+    ZL_DCtx_refDictLoader(dctx, loader
+            ? ZL_FatBundleDictLoader_getDictLoader(loader->get()) : nullptr);
+    dictionaryLoader = std::move(loader);
 }
 
 bool initJniRefs(JNIEnv* env)
@@ -209,8 +224,7 @@ NativeState* acquireState(ZL_GraphID graph)
 {
     NativeState* state = nullptr;
     if (tlsCachedState != nullptr) {
-        state = tlsCachedState;
-        tlsCachedState = nullptr;
+        state = tlsCachedState.release();
         state->reset();
         state->setGraph(graph);
         return state;
@@ -235,11 +249,17 @@ void recycleState(NativeState* state)
     if (state == nullptr) {
         return;
     }
+    // Detach references before dropping graphs and dictionaries from this owner.
+    openzl::unwrap(ZL_CCtx_resetParameters(state->cctx));
+    openzl::unwrap(ZL_DCtx_resetParameters(state->dctx));
+    state->setDictionaryBundle({});
+    state->compressor = openzl::Compressor();
+    state->startingGraph = ZL_GRAPH_ZSTD;
     state->compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
     state->compressor.setParameter(openzl::CParam::CompressionLevel, ZL_COMPRESSIONLEVEL_DEFAULT);
     state->reset();
     if (tlsCachedState == nullptr) {
-        tlsCachedState = state;
+        tlsCachedState.reset(state);
     } else {
         bool cached = false;
         {
@@ -400,6 +420,8 @@ ZL_GraphID graphIdFromOrdinal(jint ordinal)
         return ZL_GRAPH_ENTROPY;
     case 8:
         return ZL_GRAPH_CONSTANT;
+    case 9:
+        return ZL_GRAPH_TRANSFORMER_NUMERIC;
     case 0:
     default:
         return ZL_GRAPH_ZSTD;
@@ -439,6 +461,9 @@ jint graphOrdinalFromId(ZL_GraphID graph)
     }
     if (graphEquals(graph, ZL_GRAPH_CONSTANT)) {
         return 8;
+    }
+    if (graphEquals(graph, ZL_GRAPH_TRANSFORMER_NUMERIC)) {
+        return 9;
     }
     return -1;
 }

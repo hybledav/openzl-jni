@@ -463,48 +463,101 @@ public class OpenZLCompressor implements AutoCloseable {
     public static native byte[] compressWithProfileNative(String profileName, byte[] input);
     public static native byte[] compressWithSerializedNative(String profileName, byte[] serializedCompressor, byte[] input);
 
+    /** Train self-contained graphs. Dictionary training requires {@link #trainCandidates}. */
     public static byte[][] train(String profileName, byte[][] inputs, TrainOptions opts) {
-        OpenZLNative.load();
-        Objects.requireNonNull(profileName, "profileName");
-        Objects.requireNonNull(inputs, "inputs");
-        if (opts == null) {
-            opts = new TrainOptions();
-        }
-        // Write inputs into a temporary directory and call native directory-based trainer.
-        try {
-            java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("openzl-train");
-            for (int i = 0; i < inputs.length; ++i) {
-                byte[] b = inputs[i];
-                java.nio.file.Path p = tmp.resolve(Integer.toString(i));
-                java.nio.file.Files.write(p, b == null ? new byte[0] : b);
-            }
-            try {
-                return trainFromDirectory(profileName, tmp.toString(), opts);
-            } finally {
-                // best-effort cleanup
-                for (java.nio.file.Path p : java.nio.file.Files.newDirectoryStream(tmp)) {
-                    try { java.nio.file.Files.deleteIfExists(p); } catch (Exception ignored) {}
-                }
-                try { java.nio.file.Files.deleteIfExists(tmp); } catch (Exception ignored) {}
-            }
-        } catch (java.io.IOException ex) {
-            throw new IllegalStateException("Failed to prepare training inputs", ex);
-        }
+        TrainOptions options = opts == null ? new TrainOptions() : opts;
+        options.requireSelfContained();
+        return java.util.Arrays.stream(trainCandidates(profileName, inputs, options))
+                .map(TrainedCompressor::serializedCompressor).toArray(byte[][]::new);
     }
 
     private static native byte[][] trainFromDirectoryNative(String profileName, String dirPath,
             int maxTimeSecs, int threads, int numSamples, boolean pareto);
 
     public static byte[][] trainFromDirectory(String profileName, String dirPath, TrainOptions opts) {
-        OpenZLNative.load();
+        TrainOptions options = opts == null ? new TrainOptions() : opts;
+        options.requireSelfContained();
+        return java.util.Arrays.stream(trainCandidatesFromDirectory(profileName, dirPath, options))
+                .map(TrainedCompressor::serializedCompressor).toArray(byte[][]::new);
+    }
+
+    /** Train graphs while retaining all dictionary data needed to reload them. */
+    public static TrainedCompressor[] trainCandidates(String profileName, byte[][] inputs, TrainOptions opts) {
+        Objects.requireNonNull(profileName, "profileName");
+        Objects.requireNonNull(inputs, "inputs");
+        TrainOptions options = opts == null ? new TrainOptions() : opts;
+        options.validate();
+        if (inputs.length == 0) throw new IllegalArgumentException("inputs must not be empty");
+        try {
+            java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("openzl-train");
+            try {
+                for (int i = 0; i < inputs.length; ++i) {
+                    java.nio.file.Files.write(tmp.resolve(Integer.toString(i)),
+                            inputs[i] == null ? new byte[0] : inputs[i]);
+                }
+                return trainCandidatesFromDirectory(profileName, tmp.toString(), options);
+            } finally {
+                try (var files = java.nio.file.Files.newDirectoryStream(tmp)) {
+                    for (var file : files) java.nio.file.Files.deleteIfExists(file);
+                }
+                java.nio.file.Files.deleteIfExists(tmp);
+            }
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("Failed to prepare training inputs", ex);
+        }
+    }
+
+    public static TrainedCompressor[] trainCandidatesFromDirectory(String profileName, String dirPath, TrainOptions opts) {
         Objects.requireNonNull(profileName, "profileName");
         Objects.requireNonNull(dirPath, "dirPath");
-        if (opts == null) {
-            opts = new TrainOptions();
-        }
-        return trainFromDirectoryNative(profileName, dirPath,
-                opts.maxTimeSecs, opts.threads, opts.numSamples, opts.paretoFrontier);
+        TrainOptions options = opts == null ? new TrainOptions() : opts;
+        options.validate();
+        OpenZLNative.load();
+        return trainCandidatesFromDirectoryNative(profileName, dirPath,
+                options.maxTimeSecs, options.threads, options.numSamples, options.paretoFrontier,
+                options.maxNumCandidates, options.formatVersion, options.dictionaryTraining);
     }
+
+    private static native TrainedCompressor[] trainCandidatesFromDirectoryNative(String profileName, String dirPath,
+            int maxTimeSecs, int threads, int numSamples, boolean pareto,
+            int maxNumCandidates, int formatVersion, boolean dictionaryTraining);
+
+    /** Replace the current graph with a saved candidate, including its optional dictionaries. */
+    public void configureTrained(TrainedCompressor candidate) {
+        ensureOpen();
+        Objects.requireNonNull(candidate, "candidate");
+        configureTrainedNative(candidate.profileName(), candidate.serializedCompressor(), candidate.dictionaryBundle());
+    }
+
+    private native void configureTrainedNative(String profileName, byte[] serialized, byte[] dictionaryBundle);
+
+    /** Replace the decoding dictionary bundle. An empty array clears it; reset() retains it. */
+    public void setDictionaryBundle(byte[] bundle) {
+        ensureOpen();
+        setDictionaryBundleNative(Objects.requireNonNull(bundle, "bundle"));
+    }
+
+    private native void setDictionaryBundleNative(byte[] bundle);
+
+    /** Select the smallest encoding among these graphs for each input. */
+    public void configureBruteForce(OpenZLGraph... candidates) {
+        ensureOpen();
+        Objects.requireNonNull(candidates, "candidates");
+        if (candidates.length == 0) throw new IllegalArgumentException("At least one candidate graph is required");
+        int[] ids = new int[candidates.length];
+        for (int i = 0; i < ids.length; i++) ids[i] = Objects.requireNonNull(candidates[i], "candidate").id();
+        configureBruteForceNative(ids);
+    }
+
+    private native void configureBruteForceNative(int[] candidateIds);
+
+    /** Binary serialization suitable for saving and reloading a graph. Save dictionary bundles separately. */
+    public byte[] serializeCompressor() {
+        ensureOpen();
+        return serializeCompressorNative();
+    }
+
+    private native byte[] serializeCompressorNative();
 
     @Override
     public void close() {

@@ -19,7 +19,8 @@ public enum OpenZLGraph {
     FSE(5, "fse", "Finite State Entropy only pipeline."),
     HUFFMAN(6, "huffman", "Huffman entropy coding pipeline."),
     ENTROPY(7, "entropy", "Generic entropy stage without transforms."),
-    CONSTANT(8, "constant", "Fast path for nearly constant inputs.");
+    CONSTANT(8, "constant", "Fast path for nearly constant inputs."),
+    TRANSFORMER_NUMERIC(9, "transformer_numeric", "Neural selector for numeric compression graphs.");
 
     private final int id;
     private final String displayName;

@@ -38,6 +38,7 @@ FetchContent_Declare(
   PATCH_COMMAND ${CMAKE_COMMAND} -DOPENZL_SOURCE_DIR=<SOURCE_DIR> -P ${PROJECT_SOURCE_DIR}/cmake/patch_openzl_windows_xgboost.cmake
 )
 FetchContent_MakeAvailable(openzl)
+include("${PROJECT_SOURCE_DIR}/cmake/patch_openzl_protobuf_context.cmake")
 
 if(WIN32 AND TARGET xgboost_external AND TARGET xgboost AND TARGET dmlc)
     foreach(OPENZL_XGBOOST_TARGET xgboost dmlc)

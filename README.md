@@ -217,8 +217,9 @@ Pass `0` to restore the native default. Serialized compressor configurations
 have separate compatibility rules, and numeric graphs serialized by OpenZL
 0.3.0 require a 0.3.0 reader.
 
-The Protobuf conversion API writes the native default format (27); the format
-setting above applies to `OpenZLCompressor` instances.
+Protobuf conversion writes format 27 by default. To produce compatible Protobuf
+frames, train with `TrainOptions.formatVersion = 24` and pass the returned graph
+to the conversion overload accepting a trained compressor.
 
 ---
 
@@ -244,8 +245,43 @@ try {
 }
 ```
 
-Training returns self-contained serialized compressors. Upstream dictionary
-bundle training is not exposed by the current `byte[][]` return type.
+`TrainOptions.formatVersion` selects the training target (zero means the native
+default). `maxNumCandidates` limits the returned candidates in upstream order;
+zero leaves the upstream default. Limits of one through five are supported by
+keeping at least six candidates during upstream pruning, then trimming results.
+The upstream time budget bounds ACE training as a whole; it does not include
+all preprocessing, benchmarking or dictionary optimization.
+
+For dictionary training, retain the complete candidate:
+
+```java
+TrainOptions options = new TrainOptions();
+options.dictionaryTraining = true;
+TrainedCompressor candidate = OpenZLCompressor.trainCandidates("zstd", samples, options)[0];
+
+// Persist both candidate.serializedCompressor() and candidate.dictionaryBundle().
+try (OpenZLCompressor writer = new OpenZLCompressor();
+     OpenZLCompressor reader = new OpenZLCompressor()) {
+    writer.configureTrained(candidate);
+    reader.setDictionaryBundle(candidate.dictionaryBundle());
+    byte[] compressed = writer.compress(samples[0]);
+    byte[] restored = reader.decompress(compressed);
+}
+```
+
+`reset()` retains the loaded candidate and decoding bundle. `close()` releases
+their state before the native contexts enter the pool. Dictionary-backed frames
+require a decoder with the matching bundle and format 25 or newer. Existing
+`byte[][]` training methods, including Protobuf training, reject dictionary
+training because their return type cannot carry bundles.
+
+`OpenZLGraph.TRANSFORMER_NUMERIC` selects the Transformer directly. To try several
+built-in graphs on each input, call
+`configureBruteForce(OpenZLGraph.ZSTD, OpenZLGraph.HUFFMAN, OpenZLGraph.STORE)`.
+`serializeCompressor()` returns binary graph data suitable for reloading with
+`configureTrained(new TrainedCompressor(profileName, graphBytes, bundleBytes))`.
+
+See [the 0.3.0 port review](docs/OPENZL_0_3_PORT.md) for coverage and remaining API scope.
 
 ## Planned features
 

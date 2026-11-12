@@ -1,17 +1,19 @@
 #pragma once
 
 #include <jni.h>
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
 #include "openzl/cpp/Compressor.hpp"
+#include "openzl/cpp/FatBundleDictLoader.hpp"
 #include "openzl/zl_compress.h"
 #include "openzl/zl_compressor.h"
 #include "openzl/zl_decompress.h"
 #include "openzl/zl_opaque_types.h"
 
 struct CachedJNIRefs {
-    jfieldID nativeHandleField = nullptr;
+    std::atomic<jfieldID> nativeHandleField{ nullptr };
     jclass nullPointerException = nullptr;
     jclass illegalArgumentException = nullptr;
     jclass illegalStateException = nullptr;
@@ -36,6 +38,7 @@ struct NativeState {
     ZL_DCtx* dctx = nullptr;
     ZL_GraphID startingGraph{ ZL_GRAPH_ZSTD };
     ScratchBuffer outputScratch;
+    std::unique_ptr<openzl::FatBundleDictLoader> dictionaryLoader;
 
     explicit NativeState(ZL_GraphID graph);
     ~NativeState();
@@ -45,6 +48,7 @@ struct NativeState {
 
     void reset();
     void setGraph(ZL_GraphID graph);
+    void setDictionaryBundle(const std::string& bundle);
 
 private:
     static void expectSuccess(ZL_Report report, const char* action);

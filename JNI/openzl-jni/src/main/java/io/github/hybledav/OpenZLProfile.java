@@ -26,7 +26,8 @@ public enum OpenZLProfile {
     BIG_ENDIAN_UNSIGNED_32("be-u32"),
     BIG_ENDIAN_SIGNED_64("be-i64"),
     BIG_ENDIAN_UNSIGNED_64("be-u64"),
-    SDDL2("sddl2");
+    SDDL2("sddl2"),
+    ZSTD("zstd");
 
     private final String profileName;
 

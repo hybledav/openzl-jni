@@ -163,4 +163,24 @@ class TestOpenZL03Compatibility {
             }
         }
     }
+
+    @Test
+    void saoProfileHonorsTheRequestedLevelAndRoundTripsItsTransformerBranch() {
+        ByteBuffer data = ByteBuffer.allocate(28 + 28 * 1024).order(ByteOrder.LITTLE_ENDIAN);
+        data.position(28);
+        for (int i = 0; i < 1024; i++) {
+            data.putDouble(i * 0.001).putDouble(-i * 0.002).putShort((short) 0x4142)
+                    .putShort((short) (i - 500)).putFloat(i * 0.0001f).putFloat(-i * 0.0002f);
+        }
+        for (OpenZLCompressionLevel level : new OpenZLCompressionLevel[] {
+                OpenZLCompressionLevel.LEVEL_6, OpenZLCompressionLevel.LEVEL_7
+        }) {
+            try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+                compressor.setCompressionLevel(level);
+                compressor.configureProfile(OpenZLProfile.SAO);
+                assertEquals(level, compressor.getCompressionLevel());
+                assertArrayEquals(data.array(), compressor.decompress(compressor.compress(data.array())));
+            }
+        }
+    }
 }

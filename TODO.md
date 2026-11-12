@@ -22,8 +22,11 @@
 - [x] Compression-level persistence across resets/profile switches
 - [x] CLI parity for profile discovery/training workflows
 - [x] OpenZL 0.3.0 LZ, big-endian numeric and SDDL2 profiles
-- [ ] Dictionary bundle training and loading for compression/decompression
-- [ ] Expose the upstream training candidate limit and target format
+- [x] Dictionary bundle training and loading for compression/decompression
+- [x] Expose the upstream training candidate limit and target format
+- [x] Standalone numeric Transformer and serializable brute-force graph configuration
+- [ ] Dictionary bundle support in the Protobuf-specific conversion/training API
+- [ ] Optional codec output cache control
 
 ## SDDL and structured data
 - [x] SDDL compilation (`OpenZLSddl.compile`)

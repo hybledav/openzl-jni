@@ -220,6 +220,7 @@ jobs:
           curl --fail --location --retry 3 "$base-linux_amd64.jar" -o "$previous/native.jar"
           python3 scripts/check_frame_compatibility.py \
             --previous-base "$previous/base.jar" --previous-native "$previous/native.jar" \
+            --protobuf-runtime "${HOME}/.m2/repository/com/google/protobuf/protobuf-java/4.32.0/protobuf-java-4.32.0.jar" \
             --current-base "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar" \
             --current-native "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}-linux_amd64.jar"
 

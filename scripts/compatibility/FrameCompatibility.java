@@ -1,5 +1,6 @@
 import io.github.hybledav.OpenZLCompressor;
 import io.github.hybledav.OpenZLGraph;
+import io.github.hybledav.OpenZLProtobuf;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -79,7 +80,10 @@ class FrameCompatibility {
             }
         }
         try (OpenZLCompressor compressor = new OpenZLCompressor(OpenZLGraph.NUMERIC)) {
-            if (current && write) compressor.setParameter(4, 24);
+            if (current && write) {
+                compressor.setParameter(4, 24);
+                compressor.setParameter(2, 7);
+            }
             for (int pattern = 0; pattern < 4; pattern++) {
                 long[] values = new long[4096];
                 for (int i = 0; i < values.length; i++) {
@@ -100,6 +104,28 @@ class FrameCompatibility {
                             "Numeric mismatch: " + file);
                 }
             }
+        }
+        if (write && !current) {
+            byte[] payload = "Persistent OpenZL trained frame\n".repeat(1024).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] graph = OpenZLCompressor.train("serial", new byte[][] {payload, payload, payload}, null)[0];
+            Files.write(directory.resolve("old-trained.zc"), graph);
+            Files.write(directory.resolve("old-trained.zl"), OpenZLCompressor.compressWithSerializedNative("serial", graph, payload));
+        }
+        if (!write && !current && Files.exists(directory.resolve("trained24.zl"))) {
+            try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+                byte[] trainedFrame = Files.readAllBytes(directory.resolve("trained24.zl"));
+                check(compressor.inspect(trainedFrame).formatVersion() == 24, "Expected trained format 24");
+                check(Arrays.equals(Files.readAllBytes(directory.resolve("trained24.input")),
+                        compressor.decompress(trainedFrame)), "Old reader cannot read the trained frame");
+                byte[] protoFrame = Files.readAllBytes(directory.resolve("protobuf24.zl"));
+                check(compressor.inspect(protoFrame).formatVersion() == 24, "Expected Protobuf format 24");
+                OpenZLProtobuf.registerSchema(Files.readAllBytes(directory.resolve("protobuf.schema")));
+                byte[] proto = OpenZLProtobuf.convert(protoFrame, OpenZLProtobuf.Protocol.ZL,
+                        OpenZLProtobuf.Protocol.PROTO, "jni.compat.V3Frame");
+                check(Arrays.equals(Files.readAllBytes(directory.resolve("protobuf24.input")), proto),
+                        "Old reader cannot read the trained Protobuf frame");
+            }
+            System.out.println("Old reader decoded newly trained byte and Protobuf format-24 frames");
         }
         System.out.println(args[2] + " " + args[0] + ": 64 compatibility frames passed");
     }

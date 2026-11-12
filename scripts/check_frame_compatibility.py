@@ -13,20 +13,27 @@ def main():
     for release in ("previous", "current"):
         parser.add_argument(f"--{release}-base", type=Path, required=True)
         parser.add_argument(f"--{release}-native", type=Path, required=True)
+    parser.add_argument("--protobuf-runtime", type=Path, required=True)
     args = vars(parser.parse_args())
     for jar in args.values():
         if not jar.is_file():
             parser.error(f"Missing release JAR: {jar}")
     probe = Path(__file__).resolve().parent / "compatibility/FrameCompatibility.java"
     with TemporaryDirectory(prefix="openzl-frames-") as temporary:
-        def run(release, operation, directory):
-            classpath = os.pathsep.join(str(args[f"{release}_{kind}"].resolve()) for kind in ("base", "native"))
-            subprocess.run(["java", "-cp", classpath, str(probe), operation,
+        def run(release, operation, directory, source=probe):
+            jars = [args[f"{release}_{kind}"] for kind in ("base", "native")] + [args["protobuf_runtime"]]
+            classpath = os.pathsep.join(str(jar.resolve()) for jar in jars)
+            java = ["java"] + (["-Xcheck:jni"] if release == "current" else [])
+            subprocess.run(java + ["-cp", classpath, str(source), operation,
                             str(Path(temporary) / directory), release], check=True, timeout=120)
 
+        training_probe = probe.with_name("TrainingCompatibility.java")
         run("previous", "write", "old")
         run("current", "read", "old")
+        run("current", "read-old", "old", training_probe)
         run("current", "write", "new")
+        run("current", "write", "new", training_probe)
+        run("current", "read", "new", training_probe)
         run("previous", "read", "new")
     print("Both releases exchanged format-24 frames; the previous release rejected format 27")
 

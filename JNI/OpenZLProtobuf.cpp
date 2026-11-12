@@ -342,6 +342,9 @@ void configureSerializer(openzl::protobuf::ProtoSerializer& serializer)
 {
     try {
         if (auto* compressor = serializer.getCompressor()) {
+            if (compressor->getParameter(openzl::CParam::FormatVersion) == 0) {
+                compressor->setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
+            }
             compressor->setParameter(openzl::CParam::CompressionLevel, 1);
             compressor->setParameter(openzl::CParam::MinStreamSize, 0);
         }
@@ -685,6 +688,15 @@ std::string trainCompressorFromSamples(
     openzl::training::TrainParams params;
     params.numSamples      = multiInputs.size();
     params.paretoFrontier  = false;
+    params.threads = 1;
+    params.maxTimeSecs = 1;
+    params.compressorGenFunc = [](
+            openzl::poly::string_view serialized, openzl::poly::string_view dictBundle) {
+        auto compressor = std::make_unique<openzl::Compressor>();
+        compressor->selectStartingGraph(openzl::protobuf::ZL_Protobuf_registerGraph(compressor->get()));
+        compressor->deserialize(serialized, dictBundle);
+        return compressor;
+    };
 
     auto trained = openzl::training::train(
             multiInputs,
@@ -1926,21 +1938,10 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     }
 
     try {
-        jsize length = env->GetArrayLength(payload);
-        JNICriticalArray raw(env, payload);
-        if (!raw) {
-            throwNew(env, JniRefs().outOfMemoryError, "Failed to access payload contents");
-            return nullptr;
-        }
-        jbyteArray result = convertPayload(env,
-                inProto,
-                outProto,
-                raw.get(),
-                static_cast<size_t>(length),
-                compressorBytes,
-                typeName);
-        raw.release();
-        return result;
+        // Conversion can train graphs and allocate Java results; unpin before it runs.
+        const std::string input = copyArray(env, payload);
+        if (env->ExceptionCheck()) return nullptr;
+        return convertPayload(env, inProto, outProto, input.data(), input.size(), compressorBytes, typeName);
     } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
         return nullptr;
@@ -2576,6 +2577,8 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
         jint threads,
         jint numSamples,
         jboolean pareto,
+        jint maxNumCandidates,
+        jint formatVersion,
         jstring messageType)
 {
     if (samples == nullptr) {
@@ -2639,6 +2642,10 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             params.maxTimeSecs = static_cast<size_t>(maxTimeSecs);
         }
         params.paretoFrontier = pareto != JNI_FALSE;
+        if (maxNumCandidates > 0) { // Upstream crowding-distance pruning needs six points (three objectives).
+            // Prune safely there, then apply the requested public result limit below.
+            params.maxNumCandidates = static_cast<size_t>(maxNumCandidates < 6 ? 6 : maxNumCandidates);
+        }
         params.compressorGenFunc = [](
                 openzl::poly::string_view serialized,
                 openzl::poly::string_view dictBundle) {
@@ -2653,8 +2660,12 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
         };
 
         auto& compressor = *serializer.getCompressor();
-        compressor.setParameter(openzl::CParam::FormatVersion, ZL_getDefaultEncodingVersion());
+        compressor.setParameter(openzl::CParam::FormatVersion,
+                formatVersion == 0 ? ZL_getDefaultEncodingVersion() : formatVersion);
         auto trained = openzl::training::train(multiInputs, compressor, params);
+        if (maxNumCandidates > 0 && trained.size() > static_cast<size_t>(maxNumCandidates)) {
+            trained.resize(static_cast<size_t>(maxNumCandidates));
+        }
 
         jclass byteArrClass = env->FindClass("[B");
         if (!byteArrClass) {

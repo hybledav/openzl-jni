@@ -48,6 +48,7 @@ changes cause CI to fail until the notices are reviewed.
 The build applies compatibility adjustments from
 `patches/fix_future_capture.py`,
 `cmake/patch_openzl_windows_xgboost.cmake`,
+`cmake/patch_openzl_protobuf_context.cmake`,
 `cmake/shims/logger_string_compat.h` and
 `cmake/shims/tools_io_stdexcept_compat.h`.
 The bundled pdqsort source is marked by upstream as modified for OpenZL.
