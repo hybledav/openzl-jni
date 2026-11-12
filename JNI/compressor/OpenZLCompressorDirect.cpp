@@ -3,6 +3,16 @@
 #include "openzl/zl_compress.h"
 #include "openzl/zl_decompress.h"
 #include <cstdio>
+#include <cstdint>
+
+namespace {
+bool overlaps(const void* source, size_t sourceSize, const void* destination, size_t destinationSize)
+{
+    const auto src = reinterpret_cast<uintptr_t>(source);
+    const auto dst = reinterpret_cast<uintptr_t>(destination);
+    return sourceSize > 0 && destinationSize > 0 && src < dst + destinationSize && dst < src + sourceSize;
+}
+}
 
 extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compressDirect(JNIEnv* env,
         jobject obj,
@@ -33,6 +43,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compr
 
     srcPtr += srcPos;
     dstPtr += dstPos;
+    if (overlaps(srcPtr, static_cast<size_t>(srcLen), dstPtr, static_cast<size_t>(dstLen))) {
+        throwIllegalArgument(env, "Input and output ranges must not overlap");
+        return -1;
+    }
 
     ZL_Report result = ZL_CCtx_compress(state->cctx,
             dstPtr,
@@ -80,6 +94,10 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
 
     srcPtr += srcPos;
     dstPtr += dstPos;
+    if (overlaps(srcPtr, static_cast<size_t>(srcLen), dstPtr, static_cast<size_t>(dstLen))) {
+        throwIllegalArgument(env, "Input and output ranges must not overlap");
+        return -1;
+    }
 
     ZL_Report result = ZL_DCtx_decompress(state->dctx,
             dstPtr,

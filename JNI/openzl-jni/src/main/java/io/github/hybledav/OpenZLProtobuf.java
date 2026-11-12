@@ -218,6 +218,7 @@ public final class OpenZLProtobuf {
         if (!output.isDirect()) {
             throw new IllegalArgumentException("output must be a direct ByteBuffer");
         }
+        if (output.isReadOnly()) throw new java.nio.ReadOnlyBufferException();
         if (length < 0 || length > payload.capacity()) {
             throw new IllegalArgumentException("length out of bounds: " + length);
         }

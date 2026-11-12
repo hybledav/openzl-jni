@@ -91,6 +91,7 @@ public class OpenZLCompressor implements AutoCloseable {
     public int compress(ByteBuffer src, ByteBuffer dst) {
         requireDirect(src, "src");
         requireDirect(dst, "dst");
+        if (dst.isReadOnly()) throw new java.nio.ReadOnlyBufferException();
         int srcPos = src.position();
         int dstPos = dst.position();
         int written = compressDirect(src, srcPos, src.remaining(), dst, dstPos, dst.remaining());
@@ -116,6 +117,7 @@ public class OpenZLCompressor implements AutoCloseable {
     public int decompress(ByteBuffer src, ByteBuffer dst) {
         requireDirect(src, "src");
         requireDirect(dst, "dst");
+        if (dst.isReadOnly()) throw new java.nio.ReadOnlyBufferException();
         int srcPos = src.position();
         int dstPos = dst.position();
         int written = decompressDirect(src, srcPos, src.remaining(), dst, dstPos, dst.remaining());
@@ -243,6 +245,7 @@ public class OpenZLCompressor implements AutoCloseable {
         Objects.requireNonNull(output, "output");
         checkRange(input.length, inputOffset, inputLength, "input");
         checkRange(output.length, outputOffset, outputLength, "output");
+        rejectArrayOverlap(input, inputOffset, inputLength, output, outputOffset, outputLength);
         int written = compressIntoNative(input, inputOffset, inputLength, output, outputOffset, outputLength);
         if (written < 0) {
             throw new IllegalStateException("Compression failed");
@@ -261,6 +264,7 @@ public class OpenZLCompressor implements AutoCloseable {
         Objects.requireNonNull(output, "output");
         checkRange(input.length, inputOffset, inputLength, "input");
         checkRange(output.length, outputOffset, outputLength, "output");
+        rejectArrayOverlap(input, inputOffset, inputLength, output, outputOffset, outputLength);
         int written = decompressIntoNative(input, inputOffset, inputLength, output, outputOffset, outputLength);
         if (written < 0) {
             throw new IllegalStateException("Decompression failed");
@@ -423,6 +427,14 @@ public class OpenZLCompressor implements AutoCloseable {
         if (offset < 0 || length < 0 || offset > arrayLength - length) {
             throw new IndexOutOfBoundsException(
                     String.format(Locale.ROOT, "%s range [%d, %d) out of bounds", name, offset, offset + length));
+        }
+    }
+
+    private static void rejectArrayOverlap(byte[] input, int inputOffset, int inputLength,
+            byte[] output, int outputOffset, int outputLength) {
+        if (input == output && inputLength > 0 && outputLength > 0
+                && inputOffset < outputOffset + outputLength && outputOffset < inputOffset + inputLength) {
+            throw new IllegalArgumentException("Input and output ranges must not overlap");
         }
     }
 
