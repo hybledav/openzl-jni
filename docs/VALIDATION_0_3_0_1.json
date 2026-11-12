@@ -1,4 +1,129 @@
 {
+  "final_verified_release": {
+    "date": "2026-11-12",
+    "code_commit": "b0b3d06e89848e1dd8c5dc6947bee0d457240e25",
+    "ci": {
+      "run_id": 43245878428,
+      "url": "https://github.com/hybledav/openzl-jni/actions/runs/43245878428",
+      "conclusion": "success",
+      "coverage": "success",
+      "publish": "skipped"
+    },
+    "downloaded_ci_packages": {
+      "linux_amd64": {
+        "tests": {
+          "tests": 209,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "stress_iterations": 8000,
+        "artifact_sha256": {
+          "openzl-jni-0.3.0-1.jar": "b8cf9988cb30a0835e84a423f32033097d99d8a8bb63aa1c69d6e0de1b1070cd",
+          "openzl-jni-0.3.0-1-linux_amd64.jar": "5b97c4243a8fc3df52e932ae5ab2112bf1c2ad52db242b3f0e247f3ccb0502f9",
+          "openzl-jni-0.3.0-1-sources.jar": "b03afed295574b36f8c342457984b5f2ca4005f7ba94d7adf4a2694e0192ae8d",
+          "openzl-jni-0.3.0-1-javadoc.jar": "cff630b7d902c3ae4db6af7daf6a7f0fa270e191bdd7b42275aa50dabe14c037"
+        }
+      },
+      "macos_arm64": {
+        "tests": {
+          "tests": 209,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "stress_iterations": 8000,
+        "artifact_sha256": {
+          "openzl-jni-0.3.0-1-javadoc.jar": "579067bc4a09606a66c4300b109efbd2f5cde0ab49f2c3505b068cda9367a081",
+          "openzl-jni-0.3.0-1.jar": "b8cf9988cb30a0835e84a423f32033097d99d8a8bb63aa1c69d6e0de1b1070cd",
+          "openzl-jni-0.3.0-1-sources.jar": "b03afed295574b36f8c342457984b5f2ca4005f7ba94d7adf4a2694e0192ae8d",
+          "openzl-jni-0.3.0-1-macos_arm64.jar": "4f1158a396f784eab5a6378b48fac601c76bf30049bc0c6a004f6be3a6459387"
+        }
+      },
+      "windows_amd64": {
+        "tests": {
+          "tests": 209,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "stress_iterations": 8000,
+        "artifact_sha256": {
+          "openzl-jni-0.3.0-1.jar": "9eadc838668ffbb78ebb7a8c822022d1c059b411b8a2122e88d884a093c0f831",
+          "openzl-jni-0.3.0-1-windows_amd64.jar": "10459f58af98386c8f677c44a75be3da0d267d89dc2c77bd77806233b1ef3f09",
+          "openzl-jni-0.3.0-1-sources.jar": "6ab2c1e6143709105339ecd785f52cece70c6142d83c38bf84cf620f52788c23",
+          "openzl-jni-0.3.0-1-javadoc.jar": "8b212620981f2278a90571c9e2a9c79f0ca1ba98e9ad51418cf7c62a6394874d"
+        }
+      }
+    },
+    "github_artifact_digests_verified": {
+      "openzl-jni-windows_amd64": "sha256:c73662706fee5fafd6047a38bbef0138495c0a25b8798833e317269c97f644a4",
+      "openzl-native-validation-windows_amd64": "sha256:201cb5d37ad7cef059e27420ef8e2413d48438612e448293350ad9530a6677a9",
+      "openzl-jni-linux_amd64": "sha256:6a5681ae4126b9d6a5ae2c236a7dc68a322c0defa776455e1d75260483af2f1b",
+      "openzl-native-validation-linux_amd64": "sha256:7357ccaec0455b0905c8b7e3ddd9fd2c295130292223187c8e99f2e00cd40162",
+      "openzl-jni-macos_arm64": "sha256:eb3a0bb0becea5240ed72afac74b024091bb59912799d8f75a101118b1703dac",
+      "openzl-native-validation-macos_arm64": "sha256:f9062dba43e6757cc04be52f2c1006d42da5d2e3a76640e12fb1449cbb942719"
+    },
+    "license_inventory_entries": 24,
+    "pinned_dependency_source_license_checks": "passed on all three platforms",
+    "java_coverage": {
+      "line_percent": 80.75,
+      "branch_percent": 69.86,
+      "method_percent": 82.08
+    },
+    "linux_final_ci_artifact_runtime_matrix": [
+      {
+        "variant": "jdk11",
+        "seed": 2210024,
+        "iterations": 40000,
+        "all_phases_passed": true
+      },
+      {
+        "variant": "jdk17",
+        "seed": 2210024,
+        "iterations": 40000,
+        "all_phases_passed": true
+      },
+      {
+        "variant": "jdk21",
+        "seed": 2210024,
+        "iterations": 40000,
+        "all_phases_passed": true
+      },
+      {
+        "variant": "jdk25",
+        "seed": 2210024,
+        "iterations": 40000,
+        "all_phases_passed": true
+      }
+    ],
+    "linux_java11_unit_tests": {
+      "tests": 209,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "jni_checks": true
+    },
+    "sanitizers": {
+      "native_source_commit": "ff0cb3e3467e1fbb5ba2eedfa7486c4c0537a43f",
+      "native_sources_identical_to_release_commit": true,
+      "native_sha256": "6505a00f660e9776b083e0477ca3bb0f564ad9e236bbe4fa1e1200ede745f1d9",
+      "test_jvm_loaded_exact_native_hash": true,
+      "unit_tests": 209,
+      "stress_iterations": 40000,
+      "all_passed": true,
+      "findings": 0,
+      "scope": "ASan+UBSan on JNI/OpenZL; exceptions and instrumentation limits described in the Markdown report"
+    },
+    "final_stress_iterations": 224000,
+    "release_assembly_gate": "Maven package exec:exec@verify-release passed for all six JARs assembled from final CI binaries",
+    "baseline_compatibility": "Passed against checksum-pinned public 0.2.0-1; old/new format-24 frame and training exchange; old reader rejects format 27",
+    "signed_publication": "Not staged, signed or uploaded by this verification",
+    "validation_harness_sha256": {
+      "scripts/validate_native.py": "bd6dd8d8ab0ba26882b3a7d82c4a4fbd1a3866b0ef31e44e3c9aaf3b2ec37827",
+      "scripts/validation/NativeStress.java": "41b83302a9c426d49f012ac714ca1bc4deeb50826b0d5e27cd4777c8ea6a2188"
+    }
+  },
   "version": "0.3.0-1",
   "implementation_commit": "404da15",
   "os": "Linux-6.14.0-37-generic-x86_64-with-glibc2.41",

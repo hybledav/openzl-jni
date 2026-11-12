@@ -1,5 +1,40 @@
 # OpenZL JNI 0.3.0-1 validation
 
+## Final release verification
+
+Release code commit: `b0b3d06e89848e1dd8c5dc6947bee0d457240e25`.
+The [final CI run](https://github.com/hybledav/openzl-jni/actions/runs/43245878428)
+completed successfully on 2026-11-12. Linux x86_64, macOS ARM64, Windows
+x86_64 and coverage all passed. Publishing was skipped.
+
+| Final check | Result |
+| --- | --- |
+| Unit tests with `-Xcheck:jni`, each of the three platforms | 209 passed per platform; zero failures/errors/skips |
+| Boundary/corruption/dictionary stress, each platform's finished JARs | 8,000 iterations per platform, 24,000 total; all five phases passed |
+| Downloaded final Linux JAR, Java 11 / 17 / 21 / 25 | 40,000 stress iterations per runtime, 160,000 total; all passed |
+| Final Linux binary, complete unit suite on Java 11 | 209 passed with JNI checking; zero failures/errors/skips |
+| Final native sources rebuilt with ASan/UBSan | 209 unit tests and 40,000 stress iterations passed; no sanitizer/JNI findings |
+| Independent audit of all three downloaded CI packages | Passed base/source/Javadoc/platform licenses, native contents, unit XML reports and stress result JSON |
+| CI artifact provenance | All six package/diagnostic ZIP digests matched GitHub's recorded SHA-256 values |
+| Full release assembly using the final CI binaries | Maven package and `exec:exec@verify-release` passed for all six JARs; signing/upload not run |
+| License inventory | 24 unique notice/license entries; pinned source checks passed on all three platforms |
+
+The final stress total is **224,000 iterations** (24,000 platform CI +
+160,000 runtime matrix + 40,000 sanitizer), separate from earlier runs below.
+The sanitizer unit-test process was observed loading the exact rebuilt native
+library by SHA-256 (`6505a00f660e9776b083e0477ca3bb0f564ad9e236bbe4fa1e1200ede745f1d9`)
+with the ASan runtime present. This prevents accidentally treating an ordinary
+resource-bundled library as the instrumented test build. Sanitizer limitations
+are listed below.
+
+The license audit fixed nested notices missing from the earlier inventory.
+Only the final run's artifacts, with these corrections, are release candidates.
+Per-platform JAR checksums and machine-readable results are recorded in
+`final_verified_release` in [`VALIDATION_0_3_0_1.json`](VALIDATION_0_3_0_1.json).
+Those checksums identify downloaded CI artifacts, not a future signed publication.
+
+## Earlier validation history
+
 Validated locally on Linux x86_64 on 2026-11-12. Implementation commit: `404da15`.
 The subsequent [cross-platform CI baseline](https://github.com/hybledav/openzl-jni/actions/runs/43224524001)
 at `dde0584` passed Linux x86_64, macOS ARM64, Windows x86_64 and coverage before
