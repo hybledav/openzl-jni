@@ -42,6 +42,13 @@ Validation found and fixed two boundary defects:
 The new regressions reproduced failures before the fixes. Six guard tests now
 cover rejection, unchanged data/cursors and permitted disjoint regions.
 
+The first CI run exposed a baseline provenance mistake: the local Maven cache's
+`0.2.1` JAR contained a format-24 native build, while Maven Central's `0.2.1`
+writes format 21. The compatibility check now uses freshly downloaded public
+`0.2.0-1` JARs, with SHA-256 values pinned in
+`scripts/compatibility/baseline.json`. The corrected check was rerun locally;
+a cached or substituted baseline is rejected before launching either JVM.
+
 ## Reproducing the stress run
 
 Use a JDK, the finished base/native JARs, and a separate directory for each result:

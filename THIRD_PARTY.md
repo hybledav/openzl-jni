@@ -29,7 +29,7 @@ the archive checks after collecting all three platform libraries and
 before uploading to Sonatype.
 
 The Linux build also exchanges format-24 byte-array, direct-buffer and numeric
-frames with the published JNI 0.2.1 binary (OpenZL 0.2.0) in isolated JVMs.
+frames with the published JNI 0.2.0-1 binary (OpenZL 0.2.0) in isolated JVMs.
 It checks that the old reader rejects the new default format 27.
 
 For a local build, run `python3 scripts/release_licenses.py sources` after

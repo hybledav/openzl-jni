@@ -1,0 +1,8 @@
+{
+  "maven_version": "0.2.0-1",
+  "upstream_version": "0.2.0",
+  "default_format": 24,
+  "source": "https://repo.maven.apache.org/maven2/io/github/hybledav/openzl-jni/0.2.0-1/",
+  "previous_base_sha256": "4467e530884c89046667f8672d577672484ad1d7014c29200f83fbb50a6972e2",
+  "previous_native_sha256": "15c8ba623db4f8272c12a60a31691257d6bba53c2cdf13755e9e09dee879560e"
+}
