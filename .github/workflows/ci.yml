@@ -223,7 +223,7 @@ jobs:
         run: |
           python3 scripts/validate_native.py \
             --base-jar "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}.jar" \
-            --native-jar "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}-linux_amd64.jar" \
+            --native-jar "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}-${{ matrix.classifier }}.jar" \
             --count 2000 --output "${RUNNER_TEMP}/openzl-native-validation"
 
       - name: Upload native validation diagnostics
