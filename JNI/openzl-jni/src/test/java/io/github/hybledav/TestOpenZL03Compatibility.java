@@ -19,7 +19,7 @@ class TestOpenZL03Compatibility {
     private static final byte[] PAYLOAD =
             "OpenZL JNI frame compatibility\n".repeat(4096).getBytes(StandardCharsets.UTF_8);
 
-    // Produced by the published JNI 0.2.1 Linux artifact, which embeds OpenZL 0.2.0.
+    // Produced by a JNI build using OpenZL 0.2.0 (format 24).
     private static final byte[] OLD_FRAME = Base64.getDecoder().decode(
             "2KWx1wMBgeAHUgIBABYAAAAAMQGgAPABAEUBAPhPcGVuWkwgSk5JIGZyYW1lIGNvbXBhdGliaWxpdHkKAQB7v4tcOQGYSA+mx0YN3wA=");
 

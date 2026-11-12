@@ -2,6 +2,8 @@
 """Exercise OpenZL 0.2.0/0.3.0 frame exchange using isolated JVMs and release JARs."""
 
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -19,6 +21,15 @@ def main():
         if not jar.is_file():
             parser.error(f"Missing release JAR: {jar}")
     probe = Path(__file__).resolve().parent / "compatibility/FrameCompatibility.java"
+    baseline = json.loads(probe.with_name("baseline.json").read_text())
+    for kind in ("previous_base", "previous_native"):
+        checksum = hashlib.sha256()
+        with args[kind].open("rb") as source:
+            for block in iter(lambda: source.read(1024 * 1024), b""):
+                checksum.update(block)
+        if checksum.hexdigest() != baseline[kind + "_sha256"]:
+            parser.error(f"{kind} does not match published Maven {baseline['maven_version']}; download a fresh baseline")
+    print(f"Verified the published {baseline['maven_version']} baseline JAR checksums", flush=True)
     with TemporaryDirectory(prefix="openzl-frames-") as temporary:
         def run(release, operation, directory, source=probe):
             jars = [args[f"{release}_{kind}"] for kind in ("base", "native")] + [args["protobuf_runtime"]]

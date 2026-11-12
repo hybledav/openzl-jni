@@ -56,7 +56,7 @@ Transformer integer/float bit patterns and brute-force graph serialization.
 The complete Maven reactor runs with Java native-call checks enabled. The
 `scripts/check_frame_compatibility.py` harness uses finished release JARs in
 separate JVMs to exchange byte-array, direct-buffer and numeric frames with the
-published JNI 0.2.1 artifact (native OpenZL 0.2.0). It also checks old trained
+published JNI 0.2.0-1 artifact (native OpenZL 0.2.0), verified by pinned JAR checksums. It also checks old trained
 graphs, newly trained format-24 byte/Protobuf frames, and dictionary persistence
 across JVMs. The old reader must reject the default format 27.
 

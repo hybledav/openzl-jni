@@ -212,10 +212,10 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          # JNI 0.2.1 embeds OpenZL 0.2.0; use this established public artifact.
+          # Use the published OpenZL 0.2.0 release; the older JNI 0.2.1 writes format 21.
           previous="${RUNNER_TEMP}/openzl-previous"
           mkdir -p "$previous"
-          base="https://repo.maven.apache.org/maven2/io/github/hybledav/openzl-jni/0.2.1/openzl-jni-0.2.1"
+          base="https://repo.maven.apache.org/maven2/io/github/hybledav/openzl-jni/0.2.0-1/openzl-jni-0.2.0-1"
           curl --fail --location --retry 3 "$base.jar" -o "$previous/base.jar"
           curl --fail --location --retry 3 "$base-linux_amd64.jar" -o "$previous/native.jar"
           python3 scripts/check_frame_compatibility.py \
