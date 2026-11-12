@@ -58,7 +58,7 @@
   "source_and_archive_licenses_verified": true,
   "missing_platform_release_gate_rejected": true,
   "limitations": [
-    "Linux x86_64 only; no GitHub CI dispatch or push",
+    "The local stress/sanitizer runs cover Linux x86_64; separate cross-platform CI is recorded below",
     "UBSan disabled on flags_reflection, libprotobuf and libprotoc due GCC/Abseil constexpr issue; ASan retained",
     "XGBoost/dmlc external build and assembly kernels are outside full sanitizer instrumentation",
     "LeakSanitizer disabled for HotSpot; no leak-free or data-race-free certification"
@@ -75,5 +75,17 @@
     "previous_base_sha256": "4467e530884c89046667f8672d577672484ad1d7014c29200f83fbb50a6972e2",
     "previous_native_sha256": "15c8ba623db4f8272c12a60a31691257d6bba53c2cdf13755e9e09dee879560e",
     "verification": "Fresh Maven Central download; isolated JVM exchange passed after CI baseline correction"
+  },
+  "cross_platform_ci_before_shim_cleanup": {
+    "run_id": 43224524001,
+    "url": "https://github.com/hybledav/openzl-jni/actions/runs/43224524001",
+    "commit": "dde05849c0ed2fdc239f0346b805408efd6199e2",
+    "conclusion": "success",
+    "platforms": [
+      "linux-x86_64",
+      "macos-arm64",
+      "windows-x86_64"
+    ],
+    "coverage": "success"
   }
 }

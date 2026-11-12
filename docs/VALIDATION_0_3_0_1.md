@@ -1,8 +1,10 @@
 # OpenZL JNI 0.3.0-1 validation
 
-Validated on Linux x86_64 on 2026-11-12. Implementation commit: `404da15`.
-The local Linux checks pass. macOS ARM64 and Windows still require their
-real build/test jobs; nothing was pushed or dispatched to GitHub.
+Validated locally on Linux x86_64 on 2026-11-12. Implementation commit: `404da15`.
+The subsequent [cross-platform CI baseline](https://github.com/hybledav/openzl-jni/actions/runs/43224524001)
+at `dde0584` passed Linux x86_64, macOS ARM64, Windows x86_64 and coverage before
+the redundant shim cleanup began. The local stress/sanitizer results below
+are separate from those platform jobs.
 
 | Check | Result |
 | --- | --- |
@@ -41,6 +43,12 @@ Validation found and fixed two boundary defects:
 
 The new regressions reproduced failures before the fixes. Six guard tests now
 cover rejection, unchanged data/cursors and permitted disjoint regions.
+
+After that green CI baseline, the two forced standard-library include shims
+and `fix_future_capture.py` were removed with their CMake/CI hooks. OpenZL
+0.3.0 already contains those fixes; all 11 affected logger/I/O source files
+also compiled locally without injected headers. The Windows import helpers,
+Protobuf target-format patch and optional sanitizer workaround remain.
 
 The first CI run exposed a baseline provenance mistake: the local Maven cache's
 `0.2.1` JAR contained a format-24 native build, while Maven Central's `0.2.1`

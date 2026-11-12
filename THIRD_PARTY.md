@@ -46,9 +46,8 @@ changes cause CI to fail until the notices are reviewed.
 ## Modifications to upstream sources
 
 The build applies compatibility adjustments from
-`patches/fix_future_capture.py`,
-`cmake/patch_openzl_windows_xgboost.cmake`,
-`cmake/patch_openzl_protobuf_context.cmake`,
-`cmake/shims/logger_string_compat.h` and
-`cmake/shims/tools_io_stdexcept_compat.h`.
+`cmake/patch_openzl_windows_xgboost.cmake` and
+`cmake/patch_openzl_protobuf_context.cmake`.
+OpenZL 0.3.0 already supplies the standard-library includes and shared-future
+capture fix that older versions required from this wrapper.
 The bundled pdqsort source is marked by upstream as modified for OpenZL.

@@ -133,13 +133,6 @@ jobs:
             cmake -S . -B cmake_build -G Ninja -DCMAKE_BUILD_TYPE=Release
           fi
 
-      - name: Re-apply vendored source patches after configure
-        shell: bash
-        run: |
-          if [ -f "${{ github.workspace }}/patches/fix_future_capture.py" ]; then
-            python3 "${{ github.workspace }}/patches/fix_future_capture.py" || true
-          fi
-
       - name: Build native library
         shell: bash
         run: |
@@ -279,12 +272,6 @@ jobs:
 
       - name: Configure CMake
         run: cmake -S . -B cmake_build -G Ninja -DCMAKE_BUILD_TYPE=Release
-
-      - name: Re-apply vendored source patches after configure
-        run: |
-          if [ -f "${{ github.workspace }}/patches/fix_future_capture.py" ]; then
-            python3 "${{ github.workspace }}/patches/fix_future_capture.py" || true
-          fi
 
       - name: Build native library
         run: cmake --build cmake_build --target openzl_jni
