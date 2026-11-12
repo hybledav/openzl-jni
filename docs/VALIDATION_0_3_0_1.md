@@ -6,6 +6,44 @@ at `dde0584` passed Linux x86_64, macOS ARM64, Windows x86_64 and coverage befor
 the redundant shim cleanup began. The local stress/sanitizer results below
 are separate from those platform jobs.
 
+The [post-cleanup CI run](https://github.com/hybledav/openzl-jni/actions/runs/43231690262)
+at `71a252c` also passed all three platforms and coverage: **209 tests per
+platform, zero failures/errors/skips**. Its Java coverage report records 80.75%
+line, 69.86% branch and 82.08% method coverage. This measures Java coverage,
+not native-code coverage.
+
+## Final packaging audit
+
+The finished Linux, macOS and Windows artifacts from that post-cleanup run
+were downloaded and inspected independently. All have their expected 64-bit
+architecture. Windows includes checksummed GCC/MinGW-w64/winpthreads supplier
+notices, including the GCC Runtime Library Exception. Its DLL imports only
+Windows system libraries. Linux uses the system GCC/C++/C runtime; macOS uses
+the system C++/C/zlib libraries.
+
+A review of compiler dependency files found missing nested source notices
+despite the earlier inventory checks passing. The corrected inventory now
+includes divsufsort (MIT, within Zstandard), LZ4's separate xxHash copy,
+LZ4 block/frame/file attributions, and Zstandard's threading attribution.
+Their full texts are extracted from the exact pinned build sources and
+checksummed. Protobuf's upb runtime is covered by its existing BSD license.
+The unused nlohmann JSON research/test header is not linked into this library.
+Supplemental GSL and sweater licenses now use immutable upstream commits and
+are fetched and checked during source validation. Packaged wrapper LICENSE
+and NOTICE must match the repository copies.
+
+The final release gate enables `-Xcheck:jni` for all platform unit suites and
+runs the boundary/corruption/dictionary stress harness on Linux, macOS and
+Windows. CI retains source and Javadoc JARs, unit-test XML reports and
+per-platform stress logs alongside the tested binaries. Finalized artifacts
+must pass the expanded license check; the pre-audit packages are superseded.
+
+The downloaded post-cleanup Linux binary also passed another **160,000 stress
+iterations** across Java 11/17/21/25 (40,000 per runtime). Repackaging those
+exact CI binaries with the corrected notices passed the full Maven reactor,
+209 unit tests with JNI checking, and all six archive checks. Negative checks
+confirmed that missing or altered nested license texts are rejected.
+
 | Check | Result |
 | --- | --- |
 | Fresh native Release build in an isolated checkout | Passed; no previous build products reused |
@@ -71,7 +109,7 @@ python3 scripts/validate_native.py \
 Select another runtime with `--java /path/to/jdk/bin/java`. The harness compiles
 its probe for Java 11 and runs each phase in an isolated JVM with native-call
 checks, bounded Java/direct memory and a timeout. It writes phase logs and a
-machine-readable result. The future Linux CI job runs the same command with
+machine-readable result. Each platform CI job runs the same command with
 2,000 iterations per phase and retains diagnostics.
 
 ## Sanitizer scope and reproduction

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/hybledav/openzl-jni/actions/workflows/ci.yml/badge.svg)](https://github.com/hybledav/openzl-jni/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
-[![Java 21+](https://img.shields.io/badge/java-21%2B-ff69b4.svg)](https://openjdk.org/projects/jdk/21/)
+[![Java 11+](https://img.shields.io/badge/java-11%2B-ff69b4.svg)](https://openjdk.org/projects/jdk/11/)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.hybledav/openzl-jni.svg)](https://central.sonatype.com/artifact/io.github.hybledav/openzl-jni)
 
 > Meta’s OpenZL compression engine for the JVM — zero-copy JNI bindings, pooled buffers.
@@ -10,6 +10,8 @@
 ---
 
 ## Getting Started
+
+Java 11 or newer is required at runtime. The release is built with JDK 21.
 
 1. **Add the dependency**
 

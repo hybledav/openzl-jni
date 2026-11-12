@@ -60,9 +60,12 @@ published JNI 0.2.0-1 artifact (native OpenZL 0.2.0), verified by pinned JAR che
 graphs, newly trained format-24 byte/Protobuf frames, and dictionary persistence
 across JVMs. The old reader must reject the default format 27.
 
-Source, base, Javadoc and Linux classifier archives are checked locally for full
-license texts and actual native binaries. macOS ARM64 and Windows require the
-cross-platform CI run; Linux results do not validate those platforms.
+Source, base, Javadoc and each platform archive are checked for full license texts
+and actual native binaries. The post-cleanup CI run passed all 209 unit tests
+with zero failures, errors or skips on Linux x86_64, macOS ARM64 and Windows
+x86_64. The release gate additionally runs the boundary/corruption stress harness
+on all three platforms with JNI checking enabled. Local Linux runs do not
+substitute for those platform jobs.
 
 ## Deliberate API scope
 

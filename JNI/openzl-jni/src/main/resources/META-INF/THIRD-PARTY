@@ -10,11 +10,16 @@ SHA-256 values are recorded in META-INF/native-licenses.json.
 - utf8_range Protobuf 32.0 — licenses/utf8_range-LICENSE.txt
 - Zstandard 1.5.7 — licenses/Zstandard-LICENSE.txt
 - LZ4 library 1.10.0 — licenses/LZ4-LICENSE.txt
+- LZ4 block/frame/file attributions — licenses/LZ4-block-NOTICE.txt,
+  licenses/LZ4-frame-NOTICE.txt and licenses/LZ4-file-LICENSE.txt
 - XGBoost 3.1.0 — licenses/XGBoost-LICENSE.txt
 - dmlc-core 8986b0598df709117570984571476c3614f55724 — licenses/dmlc-core-LICENSE.txt
 - Ryu (within XGBoost) XGBoost 3.1.0 — licenses/Ryu-NOTICE.txt
 - xxHash (within OpenZL) OpenZL 0.3.0 — licenses/xxHash-OpenZL-LICENSE.txt
 - xxHash (within Zstandard) Zstandard 1.5.7 — licenses/xxHash-Zstandard-LICENSE.txt
+- xxHash (within LZ4) LZ4 1.10.0 — licenses/xxHash-LZ4-LICENSE.txt
+- divsufsort (within Zstandard) — licenses/divsufsort-LICENSE.txt
+- Zstandard threading attribution — licenses/Zstandard-threading-NOTICE.txt
 - pdqsort (modified by OpenZL) OpenZL 0.3.0 — licenses/pdqsort-LICENSE.txt
 - FSE/HUF (within OpenZL) OpenZL 0.3.0 — licenses/FSE-HUF-NOTICE.txt
 
@@ -26,7 +31,9 @@ Abseil, XGBoost and dmlc-core are used under Apache-2.0. The Ryu code
 included by XGBoost is used under its Apache-2.0 option, whose full text
 is included as XGBoost-LICENSE.txt. The full Ryu copyright notice is
 preserved in Ryu-NOTICE.txt. Zstandard and the FSE/HUF code are used under
-their BSD license options. The LZ4 library is used under BSD-2-Clause.
+their BSD license options. The LZ4 library is used under BSD-2-Clause;
+divsufsort is used under MIT. Protobuf's bundled upb runtime is covered
+by Protobuf-LICENSE.txt.
 
 The wrapper's BSD license and attribution are in META-INF/LICENSE and
 META-INF/NOTICE.

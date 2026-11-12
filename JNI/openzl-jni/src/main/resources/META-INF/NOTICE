@@ -7,5 +7,5 @@ Meta Platforms, Inc. and affiliates, released under the BSD
 embed OpenZL, ensure this license accompanies them.
 
 Additional JNI bindings, Maven packaging metadata, and build
-instructions are copyright (c) 2024 hybledav and contributors and are
-provided under the same BSD 3-Clause License.
+instructions are © 2024 hybledav and contributors and are provided
+under the same BSD 3-Clause License.

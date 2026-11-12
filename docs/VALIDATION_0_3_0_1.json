@@ -87,5 +87,73 @@
       "windows-x86_64"
     ],
     "coverage": "success"
-  }
+  },
+  "cross_platform_ci_after_shim_cleanup": {
+    "run_id": 43231690262,
+    "url": "https://github.com/hybledav/openzl-jni/actions/runs/43231690262",
+    "commit": "71a252cdfeb5b0fb62bd5bdaaf0b56fc4be25977",
+    "conclusion": "success",
+    "unit_tests_per_platform": 209,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "platforms": [
+      "linux-x86_64",
+      "macos-arm64",
+      "windows-x86_64"
+    ],
+    "coverage": {
+      "scope": "Java",
+      "line_percent": 80.75,
+      "branch_percent": 69.86,
+      "method_percent": 82.08
+    },
+    "stress_iterations_linux": 8000
+  },
+  "final_license_audit": {
+    "date": "2026-11-12",
+    "source_inventory_entries": 24,
+    "pinned_dependency_sources_verified": true,
+    "corrections": [
+      "divsufsort MIT license bundled in Zstandard",
+      "xxHash license bundled in LZ4",
+      "LZ4 block/frame/file attributions",
+      "Zstandard threading attribution",
+      "Immutable Microsoft GSL/sweater license provenance",
+      "Byte-identical wrapper LICENSE/NOTICE across platforms"
+    ],
+    "earlier_ci_packages_superseded": true,
+    "release_gate": "All-platform unit tests and stress with -Xcheck:jni; source and six JAR license checks before publishing"
+  },
+  "ci_artifact_runtime_matrix": [
+    {
+      "variant": "jdk11",
+      "seed": 1131024,
+      "iterations": 40000,
+      "all_phases_passed": true,
+      "native_commit": "71a252cdfeb5b0fb62bd5bdaaf0b56fc4be25977"
+    },
+    {
+      "variant": "jdk17",
+      "seed": 1137024,
+      "iterations": 40000,
+      "all_phases_passed": true,
+      "native_commit": "71a252cdfeb5b0fb62bd5bdaaf0b56fc4be25977"
+    },
+    {
+      "variant": "jdk21",
+      "seed": 1130024,
+      "iterations": 40000,
+      "all_phases_passed": true,
+      "native_commit": "71a252cdfeb5b0fb62bd5bdaaf0b56fc4be25977"
+    },
+    {
+      "variant": "jdk25",
+      "seed": 1135024,
+      "iterations": 40000,
+      "all_phases_passed": true,
+      "native_commit": "71a252cdfeb5b0fb62bd5bdaaf0b56fc4be25977"
+    }
+  ],
+  "ci_artifact_runtime_matrix_iterations": 160000
 }

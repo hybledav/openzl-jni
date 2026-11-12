@@ -170,7 +170,7 @@
       "root": "external",
       "source": "LICENSE",
       "file": "GSL-LICENSE.txt",
-      "source_url": "https://github.com/microsoft/GSL/blob/v4.0.0/LICENSE",
+      "source_url": "https://github.com/microsoft/GSL/blob/a3534567187d2edc428efd3f13466ff75fe5805c/LICENSE",
       "header": false,
       "sha256": "4c21dc82a1c7186ea754fd59d504c00947953a3401fe8e24eaa44109ef8e2555"
     },
@@ -180,9 +180,69 @@
       "root": "external",
       "source": "LICENSE",
       "file": "sweater-LICENSE.txt",
-      "source_url": "https://github.com/psiha/sweater/blob/master/LICENSE",
+      "source_url": "https://github.com/psiha/sweater/blob/e97b646e5c40873d5abb4951d5d17e46136c2117/LICENSE",
       "header": false,
       "sha256": "951709d10f44723bc720e192147d80544ac859794bd51b37e91bb09fbb8505ca"
+    },
+    {
+      "component": "divsufsort (within Zstandard)",
+      "version": "Zstandard 1.5.7",
+      "root": "openzl",
+      "source": "deps/zstd/lib/dictBuilder/divsufsort.c",
+      "file": "divsufsort-LICENSE.txt",
+      "source_url": "https://github.com/facebook/zstd/blob/v1.5.7/lib/dictBuilder/divsufsort.c",
+      "header": true,
+      "sha256": "49ea9487741f926c49d0e6a4da9ffde7e315d413f5f823830acd743fdedb2afa"
+    },
+    {
+      "component": "xxHash (within LZ4)",
+      "version": "LZ4 1.10.0",
+      "root": "openzl",
+      "source": "deps/lz4/lib/xxhash.h",
+      "file": "xxHash-LZ4-LICENSE.txt",
+      "source_url": "https://github.com/lz4/lz4/blob/v1.10.0/lib/xxhash.h",
+      "header": true,
+      "sha256": "07ab483e553e0d2e5e03480127bce6d80db2d94a8411171785c875affc5cdfa9"
+    },
+    {
+      "component": "LZ4 block attribution",
+      "version": "1.10.0",
+      "root": "openzl",
+      "source": "deps/lz4/lib/lz4.c",
+      "file": "LZ4-block-NOTICE.txt",
+      "source_url": "https://github.com/lz4/lz4/blob/v1.10.0/lib/lz4.c",
+      "header": true,
+      "sha256": "c5cc80af5cbc31e989d4f74a7cecfb2caa9a245ad1b03947bbb34b77c6d5a74e"
+    },
+    {
+      "component": "LZ4 frame attribution",
+      "version": "1.10.0",
+      "root": "openzl",
+      "source": "deps/lz4/lib/lz4frame.c",
+      "file": "LZ4-frame-NOTICE.txt",
+      "source_url": "https://github.com/lz4/lz4/blob/v1.10.0/lib/lz4frame.c",
+      "header": true,
+      "sha256": "8ae4b60a3d9ca73db65a60a0d2f5aa1dc53cb94ecc7a09da1b2f70b10d3a387b"
+    },
+    {
+      "component": "LZ4 file library attribution",
+      "version": "1.10.0",
+      "root": "openzl",
+      "source": "deps/lz4/lib/lz4file.c",
+      "file": "LZ4-file-LICENSE.txt",
+      "source_url": "https://github.com/lz4/lz4/blob/v1.10.0/lib/lz4file.c",
+      "header": true,
+      "sha256": "920cc46a0757fb871c216e0f127db49fcd7f53deaf090e3b2cd3b4e40f1c9b1f"
+    },
+    {
+      "component": "Zstandard threading attribution",
+      "version": "1.5.7",
+      "root": "openzl",
+      "source": "deps/zstd/lib/common/threading.c",
+      "file": "Zstandard-threading-NOTICE.txt",
+      "source_url": "https://github.com/facebook/zstd/blob/v1.5.7/lib/common/threading.c",
+      "header": true,
+      "sha256": "bc7cabc82e9e352141083bba3fd2b193c53fa6efc47de4997061d868f0999934"
     }
   ],
   "repositories": {

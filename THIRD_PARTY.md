@@ -7,7 +7,10 @@ under `META-INF/licenses`, `META-INF/THIRD-PARTY` and
 
 The inventory records the exact source locations and SHA-256 values for
 OpenZL, Protobuf, Abseil, utf8_range, Zstandard, LZ4, XGBoost, dmlc-core,
-xxHash, pdqsort, Ryu, Microsoft GSL, ConcurrentQueue, sweater and the bundled FSE/HUF implementation.
+xxHash (the OpenZL, Zstandard and LZ4 copies), divsufsort, pdqsort, Ryu,
+Microsoft GSL, ConcurrentQueue, sweater and the bundled FSE/HUF implementation.
+The LZ4 block/frame/file and Zstandard threading copyright notices are also
+preserved separately. Protobuf's upb runtime uses the Protobuf license.
 
 Windows JARs also carry the GCC, MinGW-w64 and winpthreads supplier
 documents copied from the actual compiler distribution. They include
@@ -26,7 +29,9 @@ sources after building. It then checks the finished base, source, Javadoc
 and platform JARs, including native binary headers, before uploading artifacts.
 The publishing job repeats
 the archive checks after collecting all three platform libraries and
-before uploading to Sonatype.
+before uploading to Sonatype. Supplemental GSL/sweater license texts are
+checked against immutable upstream commits. Wrapper license and notice
+copies must match their repository originals.
 
 The Linux build also exchanges format-24 byte-array, direct-buffer and numeric
 frames with the published JNI 0.2.0-1 binary (OpenZL 0.2.0) in isolated JVMs.

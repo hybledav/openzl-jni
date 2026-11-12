@@ -64,6 +64,7 @@ jobs:
     needs: version
     env:
       ARTIFACT_VERSION: ${{ needs.version.outputs.artifact_version }}
+      JAVA_TOOL_OPTIONS: -Xcheck:jni
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.allow-failure || false }}
     strategy:
@@ -218,7 +219,6 @@ jobs:
             --current-native "JNI/openzl-jni/target/openzl-jni-${ARTIFACT_VERSION}-linux_amd64.jar"
 
       - name: Stress test JNI boundaries and corrupted inputs
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           python3 scripts/validate_native.py \
@@ -227,10 +227,10 @@ jobs:
             --count 2000 --output "${RUNNER_TEMP}/openzl-native-validation"
 
       - name: Upload native validation diagnostics
-        if: always() && runner.os == 'Linux'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openzl-native-validation
+          name: openzl-native-validation-${{ matrix.classifier }}
           path: ${{ runner.temp }}/openzl-native-validation
           if-no-files-found: ignore
           retention-days: 7
@@ -243,6 +243,9 @@ jobs:
           path: |
             JNI/openzl-jni/target/*${{ matrix.classifier }}*.jar
             JNI/openzl-jni/target/openzl-jni-${{ env.ARTIFACT_VERSION }}.jar
+            JNI/openzl-jni/target/openzl-jni-${{ env.ARTIFACT_VERSION }}-sources.jar
+            JNI/openzl-jni/target/openzl-jni-${{ env.ARTIFACT_VERSION }}-javadoc.jar
+            JNI/openzl-jni/target/surefire-reports/*.xml
             JNI/openzl-jni/src/main/resources/lib/${{ matrix.classifier }}/**
 
   coverage:
@@ -250,6 +253,7 @@ jobs:
     needs: [version, build]
     env:
       ARTIFACT_VERSION: ${{ needs.version.outputs.artifact_version }}
+      JAVA_TOOL_OPTIONS: -Xcheck:jni
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4

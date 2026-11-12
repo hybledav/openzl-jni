@@ -32,7 +32,7 @@ def main():
         parser.error("count and timeout must be positive")
     args.output.mkdir(parents=True, exist_ok=True)
     java = args.java.resolve()
-    javac = java.with_name("javac")
+    javac = java.with_name("javac.exe" if java.suffix.lower() == ".exe" else "javac")
     source = Path(__file__).resolve().parent / "validation/NativeStress.java"
     summary = {"java": subprocess.check_output([str(java), "-version"], stderr=subprocess.STDOUT, text=True),
                "base_jar": str(args.base_jar.resolve()), "seed": args.seed, "count": args.count,

@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -75,6 +76,17 @@ def verify_sources(build):
             raise ValueError(f"Review the license inventory for {name} at {revision}")
     for entry in INVENTORY["components"]:
         if entry["root"] == "external":
+            # Supplemental licenses for code copied into XGBoost must have
+            # immutable provenance too, rather than a mutable branch URL.
+            match = re.fullmatch(r"https://github.com/([^/]+/[^/]+)/blob/([0-9a-f]{40})/(.+)", entry["source_url"])
+            if not match:
+                raise ValueError(f"Pin the supplemental license source: {entry['component']}")
+            repository, revision, path = match.groups()
+            url = f"https://raw.githubusercontent.com/{repository}/{revision}/{path}"
+            with urlopen(url, timeout=30) as response:
+                data = response.read().replace(b"\r\n", b"\n")
+            if digest(data) != entry["sha256"]:
+                raise ValueError(f"Review the supplemental license for {entry['component']}")
             continue
         source = roots[entry["root"]] / entry["source"]
         if digest(license_bytes(entry, source)) != entry["sha256"]:
@@ -105,6 +117,9 @@ def stage_runtime(compiler_file, destination):
 
 
 def verify_jar(path, classifier=None):
+    for name in ("LICENSE", "NOTICE"):
+        if (META / name).read_bytes() != (REPO / name).read_bytes():
+            raise ValueError(f"Packaged wrapper {name} differs from the repository copy")
     required = {
         f"META-INF/{name}": (META / name).read_bytes()
         for name in ("LICENSE", "NOTICE", "THIRD-PARTY", "native-licenses.json")
