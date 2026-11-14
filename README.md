@@ -7,11 +7,67 @@
 
 > Meta’s OpenZL compression engine for the JVM — zero-copy JNI bindings, pooled buffers.
 
+## New in 0.3.0-2 (release candidate)
+
+This wrapper revision adds optional codec-output caching, a Java
+`DictionaryBundleProvider`, complete dictionary candidates for Protobuf
+training/conversion, typed multi-input frames, native diagnostics, typed options
+and configurable LZ controls. It continues to use upstream OpenZL 0.3.0.
+
+- `setTryGraphCacheBudget(bytes)` opts into caching eligible codec trials;
+  zero disables it. The budget covers cached entry payloads, not all native memory.
+- `setDictionaryBundleProvider(id -> bundleBytes)` loads dictionaries before
+  decoding. `getDictionaryBundleId(frame)` supplies the key for your bundle store.
+- `OpenZLProtobuf.trainCandidates(...)` returns graph and bundle together.
+  Use `convertWithCandidate(...)`, `convertWithDictionary(...)` or
+  `convertWithDictionaryProvider(...)` for conversion. The separately named
+  methods preserve existing `convert(..., null, ...)` calls.
+
+- `compressInputs(TypedInput...)` and `decompressOutputs(...)` preserve serial,
+  numeric, fixed-width and binary string streams in one frame. Array and buffer
+  factories snapshot their inputs; buffer cursors are preserved.
+- `OpenZLException` includes the upstream code and context for typed operations.
+  `getCompressionWarnings()` and `getDecompressionWarnings()` return snapshots.
+- `setCompressionOptions(...)` and `setDecompressionOptions(...)` provide typed
+  checksum, permissive fallback, format, level and codec-fusion controls.
+- `configureLz(LzOptions)` exposes strategy, window, acceleration, hash/search
+  settings and entropy thresholds.
+
+See the [new interface guide](docs/UNRELEASED_INTERFACES.md) for examples, lifecycle
+rules and testing scope. These APIs target `0.3.0-2`; publication follows release validation. They are not available in `0.3.0-1`.
+
+## New in 0.3.0-1
+
+This release adds the numeric Compression Transformer (level 7+), the LZ
+profile and trainer, reusable training candidates with dictionary bundles,
+binary graph persistence and serializable brute-force selection. Big-endian
+integer profiles and SDDL2 are also exposed.
+
+Follow the documentation for [numeric Transformer settings](https://hybledav.github.io/openzl-jni/#transformer),
+[LZ profiles](https://hybledav.github.io/openzl-jni/#lz),
+[training and dictionary persistence](https://hybledav.github.io/openzl-jni/#dictionaries),
+and [saving graphs](https://hybledav.github.io/openzl-jni/#saved-graphs).
+Read [the upgrade notes](https://hybledav.github.io/openzl-jni/#compatibility)
+before writing for older readers: the default frame format is now 27; select
+24 explicitly for OpenZL 0.2.0 readers.
+
+A [small published-artifact benchmark](docs/BENCHMARK_0_3_0_1.md) found about
+12–33% faster level-6 numeric compression on synthetic inputs, with little
+change on the ZSTD byte path. Results are specific to the data and machine.
+
 ---
 
 ## Getting Started
 
 Java 11 or newer is required at runtime. The release is built with JDK 21.
+The 0.3.0-2 source also builds and runs on Java 25 while retaining Java 11
+bytecode compatibility. See the [Java 25 guide](docs/JAVA_25.md).
+
+For a Java 25 application using the class path, enable JNI access when launching:
+
+```bash
+java --enable-native-access=ALL-UNNAMED -cp "your-application-classpath" your.Main
+```
 
 1. **Add the dependency**
 
@@ -119,6 +175,14 @@ try (var buffers = OpenZLBufferManager.builder().build();
 
 `OpenZLCompressor.maxCompressedSize(int)` exposes `ZL_compressBound`, handy when sizing direct buffers.
 
+Return each managed buffer on the thread that borrowed it, using the exact
+object returned by the manager. Views and foreign buffers are ignored, and an
+already pooled buffer cannot be inserted twice. Stop using a buffer after
+returning it. Managed compression/decompression return their destination to the
+pool if an operation fails. Closing the manager clears the calling thread's
+cache; direct storage is reclaimed by normal JVM cleanup after references are
+released. See the [managed compression validation](docs/MANAGED_COMPRESSION.md).
+
 ---
 
 ## Structured Data with SDDL
@@ -173,8 +237,8 @@ The Java façade exposes OpenZL’s curated graph presets through the `OpenZLPro
 
 ```java
 try (OpenZLCompressor compressor = new OpenZLCompressor()) {
-    compressor.configureProfile(OpenZLProfile.CSV);
     compressor.setCompressionLevel(OpenZLCompressionLevel.LEVEL_12);
+    compressor.configureProfile(OpenZLProfile.CSV);
 
     byte[] compressed = compressor.compress(payload);
     byte[] restored = compressor.decompress(compressed);
@@ -205,6 +269,7 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
 ```
 
 Compression levels persist across profile changes and `reset()` on the same compressor.
+Set the level before configuring a profile so its graph generator can use it.
 Use independent compressor instances for concurrent operations. Immutable
 `TrainedCompressor` candidates can be shared between instances. Caller-supplied
 output buffers must be writable, and input/output regions must not overlap.
@@ -277,8 +342,9 @@ try (OpenZLCompressor writer = new OpenZLCompressor();
 `reset()` retains the loaded candidate and decoding bundle. `close()` releases
 their state before the native contexts enter the pool. Dictionary-backed frames
 require a decoder with the matching bundle and format 25 or newer. Existing
-`byte[][]` training methods, including Protobuf training, reject dictionary
-training because their return type cannot carry bundles.
+`byte[][]` training methods, including legacy Protobuf training, reject
+dictionary training because their return type cannot carry bundles. In the
+unreleased additions, Protobuf's separate `trainCandidates` API preserves bundles.
 
 `OpenZLGraph.TRANSFORMER_NUMERIC` selects the Transformer directly. To try several
 built-in graphs on each input, call
@@ -295,6 +361,10 @@ See [TODO.md](TODO.md) for planned features and improvements.
 ---
 
 ## Building from Source
+
+Set `JAVA_HOME` to the JDK used for the build, including JDK 25. When switching
+JDKs, use a fresh CMake build directory so its cached JNI headers match.
+Maven enables native access for test JVMs automatically on JDK 24 and newer.
 
 ```bash
 # build the native library

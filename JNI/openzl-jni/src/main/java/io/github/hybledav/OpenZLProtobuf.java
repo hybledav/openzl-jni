@@ -22,6 +22,95 @@ public final class OpenZLProtobuf {
 
     private static final Set<String> REGISTERED_FILE_NAMES = ConcurrentHashMap.newKeySet();
 
+    /**
+     * Converts using a complete candidate returned by this class's trainCandidates.
+     * The candidate's dictionary is available for both encoding and decoding.
+     * Kept separate from convert(..., byte[], ...) to preserve calls passing null.
+     */
+    public static byte[] convertWithCandidate(byte[] payload, Protocol inputProtocol,
+            Protocol outputProtocol, TrainedCompressor candidate, String messageType) {
+        Objects.requireNonNull(candidate, "candidate");
+        if (!"protobuf".equals(candidate.profileName())) {
+            throw new IllegalArgumentException("A Protobuf training candidate is required");
+        }
+        return convertWithBundle(payload, inputProtocol, outputProtocol,
+                candidate.serializedCompressor(), candidate.dictionaryBundle(), messageType);
+    }
+
+    public static byte[] convertWithCandidate(byte[] payload, Protocol inputProtocol,
+            Protocol outputProtocol, TrainedCompressor candidate, Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        registerSchema(descriptor.getFile());
+        return convertWithCandidate(payload, inputProtocol, outputProtocol, candidate, descriptor.getFullName());
+    }
+
+    /**
+     * Direct-buffer convenience for candidate conversions. Copies the requested
+     * remaining bytes; leaves the source position and limit unchanged.
+     */
+    public static byte[] convertWithCandidate(ByteBuffer payload, int length, Protocol inputProtocol,
+            Protocol outputProtocol, TrainedCompressor candidate, Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(payload, "payload");
+        if (!payload.isDirect()) throw new IllegalArgumentException("payload must be direct");
+        Objects.checkFromIndexSize(0, length, payload.remaining());
+        byte[] bytes = new byte[length];
+        payload.duplicate().get(bytes);
+        return convertWithCandidate(bytes, inputProtocol, outputProtocol, candidate, descriptor);
+    }
+
+    /** Decodes an OpenZL Protobuf frame with a bundle, without needing its trained graph. */
+    public static byte[] convertWithDictionary(byte[] frame, Protocol outputProtocol,
+            byte[] bundle, String messageType) {
+        return convertWithBundle(frame, Protocol.ZL, outputProtocol, null, bundle, messageType);
+    }
+
+    public static byte[] convertWithDictionary(byte[] frame, Protocol outputProtocol,
+            byte[] bundle, Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        registerSchema(descriptor.getFile());
+        return convertWithDictionary(frame, outputProtocol, bundle, descriptor.getFullName());
+    }
+
+    /** Resolves a frame's dictionary by ID before entering native conversion. */
+    public static byte[] convertWithDictionaryProvider(byte[] frame, Protocol outputProtocol,
+            DictionaryBundleProvider provider, String messageType) {
+        Objects.requireNonNull(provider, "provider");
+        byte[] id = DictionarySupport.bundleId(frame, 0, frame.length);
+        byte[] bundle = id.length == 0 ? new byte[0] : DictionarySupport.resolve(provider, id);
+        return convertWithDictionary(frame, outputProtocol, bundle, messageType);
+    }
+
+    public static byte[] convertWithDictionaryProvider(byte[] frame, Protocol outputProtocol,
+            DictionaryBundleProvider provider, Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        registerSchema(descriptor.getFile());
+        return convertWithDictionaryProvider(frame, outputProtocol, provider, descriptor.getFullName());
+    }
+
+    private static byte[] convertWithBundle(byte[] payload, Protocol inputProtocol,
+            Protocol outputProtocol, byte[] graph, byte[] bundle, String messageType) {
+        Objects.requireNonNull(payload, "payload");
+        Objects.requireNonNull(inputProtocol, "inputProtocol");
+        Objects.requireNonNull(outputProtocol, "outputProtocol");
+        Objects.requireNonNull(bundle, "bundle");
+        Objects.requireNonNull(messageType, "messageType");
+        OpenZLNative.load();
+        byte[] converted = convertWithBundleNative(payload, inputProtocol.id(), outputProtocol.id(),
+                graph, bundle, messageType);
+        if (converted == null) throw new IllegalStateException("Native protobuf conversion failed");
+        return converted;
+    }
+
+    /** Releases the calling thread's cached dictionary conversion context. */
+    public static void clearDictionaryCache() {
+        OpenZLNative.load();
+        clearDictionaryCacheNative();
+    }
+
+    private static native byte[] convertWithBundleNative(byte[] payload, int inputProtocol,
+            int outputProtocol, byte[] graph, byte[] bundle, String messageType);
+    private static native void clearDictionaryCacheNative();
+
     public enum Protocol {
         PROTO(0),
         ZL(1),
@@ -317,6 +406,41 @@ public final class OpenZLProtobuf {
         }
         return trained;
     }
+
+    /**
+     * Trains complete Protobuf candidates, preserving optional dictionary bundles.
+     * Candidate profile names are "protobuf"; load them with convertWithCandidate.
+     */
+    public static TrainedCompressor[] trainCandidates(byte[][] samples, Protocol inputProtocol,
+            TrainOptions options, String messageType) {
+        Objects.requireNonNull(samples, "samples");
+        Objects.requireNonNull(inputProtocol, "inputProtocol");
+        Objects.requireNonNull(messageType, "messageType");
+        if (samples.length == 0) throw new IllegalArgumentException("samples must not be empty");
+        for (byte[] sample : samples) Objects.requireNonNull(sample, "sample");
+        TrainOptions opts = options == null ? new TrainOptions() : options;
+        opts.validate();
+        if (opts.dictionaryTraining && opts.formatVersion > 0 && opts.formatVersion < 25) {
+            throw new IllegalArgumentException("Dictionary-backed frames require format 25 or newer");
+        }
+        OpenZLNative.load();
+        TrainedCompressor[] trained = trainCandidatesNative(samples, inputProtocol.id(),
+                opts.maxTimeSecs, opts.threads, opts.numSamples, opts.paretoFrontier,
+                opts.maxNumCandidates, opts.formatVersion, opts.dictionaryTraining, messageType);
+        if (trained == null) throw new IllegalStateException("Native protobuf training failed");
+        return trained;
+    }
+
+    public static TrainedCompressor[] trainCandidates(byte[][] samples, Protocol inputProtocol,
+            TrainOptions options, Descriptors.Descriptor descriptor) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        registerSchema(descriptor.getFile());
+        return trainCandidates(samples, inputProtocol, options, descriptor.getFullName());
+    }
+
+    private static native TrainedCompressor[] trainCandidatesNative(byte[][] samples,
+            int inputProtocol, int maxTimeSecs, int threads, int numSamples, boolean pareto,
+            int maxNumCandidates, int formatVersion, boolean dictionaryTraining, String messageType);
 
     public static byte[][] train(byte[][] samples,
             Protocol inputProtocol,

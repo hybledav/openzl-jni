@@ -32,6 +32,8 @@
 #include "tools/protobuf/StringReader.h"
 #include "tools/training/train.h"
 #include "tools/training/train_params.h"
+#include "openzl/codecs/zl_zstd.h"
+#include "openzl/codecs/zl_clustering.h"
 #include "tools/training/utils/utils.h"
 
 namespace {
@@ -1847,6 +1849,45 @@ jbyteArray decompressStructuredPayload(
     }
 }
 
+// One explicitly dictionary-configured context per calling thread. Replacement
+// is transactional and bounded to the most recently used graph/bundle pair.
+ZL_GraphID registerProtobufTrainingGraph(ZL_Compressor* compressor, bool dictionaries)
+{
+    if (!dictionaries) return openzl::protobuf::ZL_Protobuf_registerGraph(compressor);
+    // The upstream Protobuf ACE graph contains no trainable dictionary nodes.
+    // Preserve typed-stream clustering, with a dictionary-trainable Zstd backend.
+    const ZL_GraphID backend = openzl::unwrap(ZL_Compressor_buildTrainableZstdGraph(compressor));
+    ZL_ClusteringConfig config{};
+    return ZL_Clustering_registerGraph(compressor, &config, &backend, 1);
+}
+
+struct DictionaryConversionContext {
+    std::string graphBytes;
+    std::string bundleBytes;
+    std::unique_ptr<openzl::FatBundleDictLoader> loader;
+    openzl::protobuf::ProtoSerializer serializer;
+    openzl::protobuf::ProtoDeserializer deserializer;
+
+    DictionaryConversionContext(std::string graph, std::string bundle)
+            : graphBytes(std::move(graph)), bundleBytes(std::move(bundle))
+    {
+        if (!bundleBytes.empty()) {
+            loader = std::make_unique<openzl::FatBundleDictLoader>();
+            loader->loadFatBundle(bundleBytes);
+            deserializer.refDictLoader(ZL_FatBundleDictLoader_getDictLoader(loader->get()));
+        }
+        if (!graphBytes.empty()) {
+            openzl::Compressor trained;
+            trained.selectStartingGraph(registerProtobufTrainingGraph(trained.get(), !bundleBytes.empty()));
+            trained.deserialize(graphBytes, bundleBytes);
+            serializer.setCompressor(std::move(trained));
+        }
+        configureSerializer(serializer);
+    }
+};
+
+thread_local std::unique_ptr<DictionaryConversionContext> dictionaryConversionCache;
+
 jbyteArray convertPayload(JNIEnv* env,
         Protocol inProto,
         Protocol outProto,
@@ -1908,6 +1949,53 @@ jbyteArray convertPayload(JNIEnv* env,
     }
 }
 } // namespace
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_clearDictionaryCacheNative(
+        JNIEnv*, jclass)
+{
+    dictionaryConversionCache.reset();
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertWithBundleNative(
+        JNIEnv* env, jclass, jbyteArray payload, jint inputProtocol, jint outputProtocol,
+        jbyteArray graph, jbyteArray bundle, jstring messageType)
+{
+    if (!payload || !bundle) {
+        throwNew(env, JniRefs().nullPointerException, "Payload and dictionary bundle are required");
+        return nullptr;
+    }
+    const auto in = parseProtocol(env, inputProtocol);
+    if (env->ExceptionCheck()) return nullptr;
+    const auto out = parseProtocol(env, outputProtocol);
+    if (env->ExceptionCheck()) return nullptr;
+    const auto type = requireMessageType(env, messageType);
+    if (env->ExceptionCheck()) return nullptr;
+    try {
+        const auto inputBytes = copyArray(env, payload);
+        if (env->ExceptionCheck()) return nullptr;
+        const auto graphBytes = graph ? copyArray(env, graph) : std::string();
+        if (env->ExceptionCheck()) return nullptr;
+        const auto bundleBytes = copyArray(env, bundle);
+        if (env->ExceptionCheck()) return nullptr;
+        if (!dictionaryConversionCache
+                || dictionaryConversionCache->graphBytes != graphBytes
+                || dictionaryConversionCache->bundleBytes != bundleBytes) {
+            auto next = std::make_unique<DictionaryConversionContext>(graphBytes, bundleBytes);
+            dictionaryConversionCache = std::move(next);
+        }
+        auto& context = *dictionaryConversionCache;
+        auto& message = reusableMessage(type);
+        message.Clear();
+        parseIntoMessage(env, in, inputBytes, message, context.deserializer);
+        if (env->ExceptionCheck()) return nullptr;
+        const auto result = serialiseMessage(env, out, message, context.serializer);
+        if (env->ExceptionCheck()) return nullptr;
+        return makeByteArray(env, result);
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+        return nullptr;
+    }
+}
 
 extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_convertNative(
         JNIEnv* env,
@@ -2568,9 +2656,8 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_c
     }
 }
 
-extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_trainNative(
+static jobjectArray trainProtobufImpl(
         JNIEnv* env,
-        jclass,
         jobjectArray samples,
         jint inputProtocol,
         jint maxTimeSecs,
@@ -2579,7 +2666,9 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
         jboolean pareto,
         jint maxNumCandidates,
         jint formatVersion,
-        jstring messageType)
+        jstring messageType,
+        bool dictionaryTraining,
+        bool returnCandidates)
 {
     if (samples == nullptr) {
         throwNew(env, JniRefs().nullPointerException, "samples");
@@ -2616,6 +2705,7 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             }
             std::string payload = copyArray(env, sample);
             env->DeleteLocalRef(sample);
+            if (env->ExceptionCheck()) return nullptr;
 
             google::protobuf::Message& message = reusableMessage(typeName);
             parseIntoMessage(env, inProto, payload, message, deserializer);
@@ -2642,16 +2732,18 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             params.maxTimeSecs = static_cast<size_t>(maxTimeSecs);
         }
         params.paretoFrontier = pareto != JNI_FALSE;
+        params.dictTraining = dictionaryTraining;
+        params.noAceSuccessors = dictionaryTraining;
         if (maxNumCandidates > 0) { // Upstream crowding-distance pruning needs six points (three objectives).
             // Prune safely there, then apply the requested public result limit below.
             params.maxNumCandidates = static_cast<size_t>(maxNumCandidates < 6 ? 6 : maxNumCandidates);
         }
-        params.compressorGenFunc = [](
+        params.compressorGenFunc = [dictionaryTraining](
                 openzl::poly::string_view serialized,
                 openzl::poly::string_view dictBundle) {
             auto up = std::make_unique<openzl::Compressor>();
             try {
-                ZL_GraphID gid = openzl::protobuf::ZL_Protobuf_registerGraph(up->get());
+                ZL_GraphID gid = registerProtobufTrainingGraph(up->get(), dictionaryTraining);
                 up->selectStartingGraph(gid);
             } catch (...) {
             }
@@ -2659,7 +2751,11 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             return up;
         };
 
-        auto& compressor = *serializer.getCompressor();
+        openzl::Compressor dictionaryCompressor;
+        if (dictionaryTraining) {
+            dictionaryCompressor.selectStartingGraph(registerProtobufTrainingGraph(dictionaryCompressor.get(), true));
+        }
+        auto& compressor = dictionaryTraining ? dictionaryCompressor : *serializer.getCompressor();
         compressor.setParameter(openzl::CParam::FormatVersion,
                 formatVersion == 0 ? ZL_getDefaultEncodingVersion() : formatVersion);
         auto trained = openzl::training::train(multiInputs, compressor, params);
@@ -2667,36 +2763,57 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf
             trained.resize(static_cast<size_t>(maxNumCandidates));
         }
 
-        jclass byteArrClass = env->FindClass("[B");
-        if (!byteArrClass) {
-            return nullptr;
-        }
-        jobjectArray out = env->NewObjectArray(
-                static_cast<jsize>(trained.size()), byteArrClass, nullptr);
-        if (out == nullptr) {
-            return nullptr;
-        }
+        jclass elementClass = env->FindClass(returnCandidates ? "io/github/hybledav/TrainedCompressor" : "[B");
+        if (!elementClass) return nullptr;
+        jmethodID constructor = returnCandidates
+                ? env->GetMethodID(elementClass, "<init>", "(Ljava/lang/String;[B[B)V") : nullptr;
+        if (returnCandidates && !constructor) return nullptr;
+        jstring profile = returnCandidates ? env->NewStringUTF("protobuf") : nullptr;
+        if (returnCandidates && !profile) return nullptr;
+        auto out = env->NewObjectArray(static_cast<jsize>(trained.size()), elementClass, nullptr);
+        if (!out) return nullptr;
         for (size_t i = 0; i < trained.size(); ++i) {
-            const auto& serialized = trained[i].serializedCompressor;
-            jbyteArray elem = env->NewByteArray(static_cast<jsize>(serialized.size()));
-            if (elem == nullptr) {
-                return nullptr;
+            jbyteArray graph = makeByteArray(env, trained[i].serializedCompressor);
+            if (!graph) return nullptr;
+            if (returnCandidates) {
+                jbyteArray bundle = makeByteArray(env, trained[i].dicts.empty()
+                        ? std::string() : trained[i].packFatBundle());
+                if (!bundle) return nullptr;
+                jobject candidate = env->NewObject(elementClass, constructor, profile, graph, bundle);
+                if (!candidate) return nullptr;
+                env->SetObjectArrayElement(out, static_cast<jsize>(i), candidate);
+                env->DeleteLocalRef(candidate);
+                env->DeleteLocalRef(bundle);
+            } else {
+                env->SetObjectArrayElement(out, static_cast<jsize>(i), graph);
             }
-            if (!serialized.empty()) {
-                env->SetByteArrayRegion(
-                        elem,
-                        0,
-                        static_cast<jsize>(serialized.size()),
-                        reinterpret_cast<const jbyte*>(serialized.data()));
-            }
-            env->SetObjectArrayElement(out, static_cast<jsize>(i), elem);
-            env->DeleteLocalRef(elem);
+            env->DeleteLocalRef(graph);
+            if (env->ExceptionCheck()) return nullptr;
         }
         return out;
     } catch (const std::exception& ex) {
         throwIllegalState(env, ex.what());
         return nullptr;
     }
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_trainNative(
+        JNIEnv* env, jclass, jobjectArray samples, jint inputProtocol,
+        jint maxTimeSecs, jint threads, jint numSamples, jboolean pareto,
+        jint maxNumCandidates, jint formatVersion, jstring messageType)
+{
+    return trainProtobufImpl(env, samples, inputProtocol, maxTimeSecs, threads,
+            numSamples, pareto, maxNumCandidates, formatVersion, messageType, false, false);
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLProtobuf_trainCandidatesNative(
+        JNIEnv* env, jclass, jobjectArray samples, jint inputProtocol,
+        jint maxTimeSecs, jint threads, jint numSamples, jboolean pareto,
+        jint maxNumCandidates, jint formatVersion, jboolean dictionaryTraining, jstring messageType)
+{
+    return trainProtobufImpl(env, samples, inputProtocol, maxTimeSecs, threads,
+            numSamples, pareto, maxNumCandidates, formatVersion, messageType,
+            dictionaryTraining != JNI_FALSE, true);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLProtobuf_registerSchemaNative(

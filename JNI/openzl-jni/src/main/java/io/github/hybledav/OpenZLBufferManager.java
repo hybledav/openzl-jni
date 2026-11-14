@@ -1,6 +1,7 @@
 package io.github.hybledav;
 
 import java.nio.ByteBuffer;
+import java.lang.ref.WeakReference;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,13 +60,15 @@ public final class OpenZLBufferManager implements AutoCloseable {
 
     /**
      * Release the buffer so it can be reused by subsequent {@link #acquire(int)} calls.
-     * Buffers not originally allocated by this manager are ignored.
+     * Only the exact buffer borrowed on the current thread can be returned.
+     * Foreign buffers, views and duplicate releases are ignored without changing their cursors.
      */
     public void release(ByteBuffer buffer) {
         Objects.requireNonNull(buffer, "buffer");
         pool.get().release(buffer);
     }
 
+    /** Clears the calling thread's cache and ownership records; other threads are unaffected. */
     @Override
     public void close() {
         PoolState state = pool.get();
@@ -97,6 +100,9 @@ public final class OpenZLBufferManager implements AutoCloseable {
 
     private final class PoolState {
         private final List<ArrayDeque<ByteBuffer>> buckets = new ArrayList<>();
+        // Identity is essential: ByteBuffer equality/hash codes depend on mutable content.
+        // Weak references let abandoned checked-out buffers remain eligible for normal GC.
+        private final List<WeakReference<ByteBuffer>> borrowed = new ArrayList<>();
 
         private PoolState() {
             // Pre-create a few buckets for common sizes. We use powers of two starting from
@@ -119,12 +125,27 @@ public final class OpenZLBufferManager implements AutoCloseable {
             if (buffer == null) {
                 buffer = allocateDirect(capacity);
             }
+            borrowed.removeIf(reference -> reference.get() == null);
+            borrowed.add(new WeakReference<>(buffer));
             buffer.clear();
             return buffer;
         }
 
         void release(ByteBuffer buffer) {
             if (buffer == null || !buffer.isDirect()) {
+                return;
+            }
+            boolean owned = false;
+            for (java.util.Iterator<WeakReference<ByteBuffer>> it = borrowed.iterator(); it.hasNext();) {
+                ByteBuffer candidate = it.next().get();
+                if (candidate == null || candidate == buffer) {
+                    it.remove();
+                }
+                if (candidate == buffer) {
+                    owned = true;
+                }
+            }
+            if (!owned) {
                 return;
             }
             buffer.clear();
@@ -135,6 +156,7 @@ public final class OpenZLBufferManager implements AutoCloseable {
         }
 
         void clear() {
+            borrowed.clear();
             for (ArrayDeque<ByteBuffer> bucket : buckets) {
                 bucket.clear();
             }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenZL JNI – Java API documentation</title>
-  <meta name="description" content="Documentation for the OpenZL JNI Java bindings. Covers setup, compression, ByteBuffer use, numeric helpers, SDDL, metadata inspection, and training.">
+  <meta name="description" content="OpenZL JNI 0.3.0-1 Java documentation: compression, numeric Transformer, LZ profiles, trained dictionary bundles, graph persistence and upgrade compatibility.">
   <meta name="robots" content="index,follow">
   <meta name="google-site-verification" content="eJeEd3bDfdvDj78BDvt6CVLTqOmqFuHOg6vxVlIYtcU">
   <link rel="canonical" href="https://hybledav.github.io/openzl-jni/">
@@ -131,15 +131,73 @@
     </header>
 
     <nav aria-label="table of contents">
+      <a href="#unreleased-interfaces">Wrapper 0.3.0-2 APIs</a>
+      <a href="#release-0-3">What's new in 0.3.0</a>
       <a href="#getting-started">Getting started</a>
       <a href="#quick-start">Quick start</a>
       <a href="#buffers">Direct buffers</a>
       <a href="#numeric">Numeric helpers</a>
+      <a href="#transformer">Numeric Transformer</a>
       <a href="#sddl">SDDL</a>
       <a href="#metadata">Frame metadata</a>
       <a href="#profiles">Graphs &amp; profiles</a>
       <a href="#training">Training</a>
+      <a href="#dictionaries">Dictionary bundles</a>
+      <a href="#saved-graphs">Saved graphs</a>
+      <a href="#compatibility">Upgrading from 0.2.0</a>
     </nav>
+
+    <section id="unreleased-interfaces">
+      <h2>Wrapper 0.3.0-2 interfaces</h2>
+      <p>Wrapper 0.3.0-2 extends the Java interfaces while continuing to use
+        OpenZL 0.3.0. Publication follows release validation. These methods are not available in <code>0.3.0-1</code>.</p>
+      <ul>
+        <li><code>compressInputs(TypedInput...)</code> and <code>decompressOutputs(...)</code>
+          support mixed serial, numeric, fixed-width and binary string streams.
+          Array/buffer factories snapshot inputs and preserve buffer cursors.</li>
+        <li><code>CompressionOptions</code>, <code>DecompressionOptions</code> and
+          <code>LzOptions</code> expose checksums, codec fusion and advanced LZ settings.</li>
+        <li><code>OpenZLException</code> carries native codes/context for typed operations;
+          named compression/decompression warning getters return snapshots.</li>
+        <li><code>setTryGraphCacheBudget(bytes)</code> opts into caching eligible
+          codec outputs during graph trials. Zero disables it. The budget covers
+          cached entry payloads, not all native memory.</li>
+        <li><code>DictionaryBundleProvider</code> loads a dictionary bundle from a
+          frame's ID before decoding. Callbacks run before native array pinning;
+          independent compressor instances can share a thread-safe provider.</li>
+        <li><code>OpenZLProtobuf.trainCandidates</code> preserves graphs and bundles.
+          Use <code>convertWithCandidate</code>, <code>convertWithDictionary</code>
+          or <code>convertWithDictionaryProvider</code> for dictionary-aware conversion.</li>
+      </ul>
+      <p>The <a href="https://github.com/hybledav/openzl-jni/blob/main/docs/UNRELEASED_INTERFACES.md">interface guide</a>
+        covers examples, persistence and cleanup. Existing graph-only training and
+        conversion calls remain available.</p>
+    </section>
+
+    <section id="release-0-3">
+      <h2>What's new in 0.3.0-1</h2>
+      <p>This release wraps OpenZL 0.3.0. Release numbers follow
+        <code>upstream-version-wrapper-revision</code>: the first wrapper release
+        for each upstream version ends in <code>-1</code>.</p>
+      <ul>
+        <li><a href="#transformer">Numeric Compression Transformer</a> builds a graph
+          for each input at level 7 and above.</li>
+        <li><a href="#lz">LZ profile</a> and trainer use the upgraded native LZ engine.
+          Big-endian integer profiles and SDDL2 are also available.</li>
+        <li><a href="#dictionaries">Training candidates</a> preserve both the graph
+          and dictionary bundle for saving and reuse.</li>
+        <li><a href="#saved-graphs">Brute-force selection and binary graph persistence</a>
+          let you reuse a configured compressor.</li>
+        <li><a href="#compatibility">Frame format 27 is the default</a>; select 24
+          explicitly when writing for OpenZL 0.2.0 readers.</li>
+      </ul>
+      <p>In a small Linux benchmark against the published <code>0.2.0-1</code>
+        release, level-6 numeric compression improved by about 12–33%, while
+        ZSTD byte-array speed stayed close to the earlier release. These
+        synthetic results depend on the workload and machine. See the
+        <a href="https://github.com/hybledav/openzl-jni/blob/main/docs/BENCHMARK_0_3_0_1.md">benchmark method and full results</a>
+        and <a href="https://github.com/meta/openzl/releases/tag/v0.3.0">upstream release notes</a>.</p>
+    </section>
 
     <section id="getting-started">
       <h2>Getting started</h2>
@@ -160,7 +218,11 @@
   &lt;classifier&gt;linux_amd64&lt;/classifier&gt;
 &lt;/dependency&gt;</code></pre>
       <p>
-        The Java façade is compatible with Java 21+. Classes are compiled with <code>--release 11</code>.
+        Java 11 or newer is supported at runtime. Releases are built with JDK 21
+        and classes are compiled with <code>--release 11</code>.
+        The 0.3.0-2 source is also tested with JDK 25. Java 25 applications
+        on the class path should launch with <code>--enable-native-access=ALL-UNNAMED</code>.
+        See the <a href="https://github.com/hybledav/openzl-jni/blob/main/docs/JAVA_25.md">Java 25 guide</a>.
         <code>OpenZLNative.load()</code> extracts the bundled <code>libopenzl_jni</code> library automatically.
       </p>
       <p>
@@ -220,6 +282,8 @@ try (OpenZLBufferManager buffers = OpenZLBufferManager.builder()
       <p>
         Use <code>compress(src, dst)</code> when you manage the destination buffer yourself. The static helper
         <code>OpenZLCompressor.maxCompressedSize(int)</code> returns the upper bound used by <code>acquireForCompression</code>.
+        Destination buffers must be writable; input and output regions must not overlap.
+        Use a separate compressor instance for each concurrent operation.
       </p>
     </section>
 
@@ -245,6 +309,26 @@ try (OpenZLCompressor compressor = new OpenZLCompressor(OpenZLGraph.NUMERIC)) {
         Array helpers exist for <code>long</code>, <code>float</code>, and <code>double</code>. Empty arrays return <code>byte[0]</code>.
         These methods avoid extra array-to-byte conversions when the data is already typed.
       </p>
+      <h3 id="transformer">Numeric Compression Transformer</h3>
+      <p><code>NUMERIC</code> uses the Transformer at compression level 7 and above.
+        The default remains level 6. The Transformer chooses a graph for each
+        numeric input without sample training; measure the speed/size tradeoff
+        on your own data before increasing the level.</p>
+      <pre><code id="example-transformer" class="language-java">import io.github.hybledav.*;
+import java.util.Arrays;
+
+int[] readings = new int[4096];
+for (int i = 0; i &lt; readings.length; i++) readings[i] = i * 4 + i % 4;
+try (OpenZLCompressor compressor = new OpenZLCompressor(OpenZLGraph.NUMERIC)) {
+    compressor.setCompressionLevel(OpenZLCompressionLevel.LEVEL_7);
+    byte[] frame = compressor.compressInts(readings);
+    if (!Arrays.equals(readings, compressor.decompressInts(frame))) {
+        throw new IllegalStateException("Numeric round trip failed");
+    }
+}</code></pre>
+      <p>Use <code>new OpenZLCompressor(OpenZLGraph.TRANSFORMER_NUMERIC)</code>
+        to select the Transformer directly. Typed int, long, float and double
+        helpers work with it. These new frames need a compatible newer reader.</p>
     </section>
 
     <section id="sddl">
@@ -282,8 +366,11 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
     System.out.printf("serial=%d B, sddl=%d B%n", serial.length, structured.length);
 }</code></pre>
       <p>
-        Reset between experiments to clear the previous graph state. SDDL can improve compression whenever the input layout
-        matches the declared structure.
+        <code>reset()</code> retains the current graph, level, target format and
+        dictionary bundle. Use <code>configureProfile</code> or
+        <code>configureSddl</code> to select another pipeline.
+        <code>OpenZLSddl.compile</code> compiles SDDL v1. To load an SDDL2 file, use
+        <code>configureProfile(OpenZLProfile.SDDL2, Map.of("TBD", descriptionPath))</code>.
       </p>
     </section>
 
@@ -307,7 +394,10 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
 }</code></pre>
       <p>
         <code>OpenZLCompressionInfo</code> also exposes <code>compressionRatio()</code>, the inferred <code>OpenZLGraph</code>, and
-        optional element counts for structured frames. Use <code>serialize()</code> or <code>serializeToJson()</code> to persist the compressor state.
+        optional element counts for structured frames. Use <code>serialize()</code>
+        or <code>serializeToJson()</code> for inspection; use
+        <a href="#saved-graphs"><code>serializeCompressor()</code></a> for binary
+        graph persistence, saving any dictionary bundle separately.
       </p>
     </section>
 
@@ -332,6 +422,7 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
           <tr><td><code>HUFFMAN</code></td><td>6</td><td>Huffman-only entropy stage.</td></tr>
           <tr><td><code>ENTROPY</code></td><td>7</td><td>Generic entropy coding.</td></tr>
           <tr><td><code>CONSTANT</code></td><td>8</td><td>Fast path for constant or near-constant inputs.</td></tr>
+          <tr><td><code>TRANSFORMER_NUMERIC</code></td><td>9</td><td>Neural selection of numeric compression graphs.</td></tr>
         </tbody>
       </table>
 
@@ -357,28 +448,201 @@ try (OpenZLCompressor compressor = new OpenZLCompressor()) {
           <tr><td><code>PARQUET</code></td><td><code>parquet</code></td><td>Columnar data exported from Parquet.</td></tr>
           <tr><td><code>SDDL</code></td><td><code>sddl</code></td><td>Precompiled SDDL programs.</td></tr>
           <tr><td><code>SAO</code></td><td><code>sao</code></td><td>Sample Adaptive Optimisation pipeline.</td></tr>
+          <tr><td><code>LZ</code></td><td><code>lz</code></td><td>OpenZL's native LZ engine; byte input.</td></tr>
+          <tr><td><code>ZSTD</code></td><td><code>zstd</code></td><td>Zstandard profile, including dictionary training.</td></tr>
+          <tr><td><code>BIG_ENDIAN_<wbr>SIGNED_<wbr>16/32/64</code></td><td><code>be-i16 / be-i32 / be-i64</code></td><td>Signed big-endian sequences supplied as bytes.</td></tr>
+          <tr><td><code>BIG_ENDIAN_<wbr>UNSIGNED_<wbr>16/32/64</code></td><td><code>be-u16 / be-u32 / be-u64</code></td><td>Unsigned big-endian sequences supplied as bytes.</td></tr>
+          <tr><td><code>SDDL2</code></td><td><code>sddl2</code></td><td>SDDL2 description file, passed using the <code>TBD</code> argument.</td></tr>
         </tbody>
       </table>
       <p>
         List available profiles at runtime with <code>OpenZLCompressor.listProfiles()</code>. Use
         <code>configureProfile(profile, Map&lt;String,String&gt; args)</code> to pass profile-specific parameters.
       </p>
+      <h3 id="lz">Using the LZ profile</h3>
+      <p>Set the compression level before configuring a profile so its graph
+        generator can use that level. Levels 1–7 select the LZ engine's
+        supported compression tradeoffs.</p>
+      <pre><code id="example-lz" class="language-java">import io.github.hybledav.*;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+
+byte[] payload = "event=sensor-update status=ok\n".repeat(512)
+        .getBytes(StandardCharsets.UTF_8);
+try (OpenZLCompressor compressor = new OpenZLCompressor()) {
+    compressor.setCompressionLevel(OpenZLCompressionLevel.LEVEL_3);
+    compressor.configureProfile(OpenZLProfile.LZ);
+    byte[] frame = compressor.compress(payload);
+    if (!Arrays.equals(payload, compressor.decompress(frame))) {
+        throw new IllegalStateException("LZ round trip failed");
+    }
+}</code></pre>
     </section>
 
     <section id="training">
       <h2>Training</h2>
       <p>
-        Two convenience methods expose the native trainer:
+        Train representative samples once and reuse the resulting candidates:
       </p>
       <ul>
-        <li><code>OpenZLCompressor.train(String profile, byte[][] inputs, TrainOptions opts)</code></li>
-        <li><code>OpenZLCompressor.trainFromDirectory(String profile, String dir, TrainOptions opts)</code></li>
+        <li><code>trainCandidates(profile, byte[][] inputs, options)</code> accepts sample arrays.</li>
+        <li><code>trainCandidatesFromDirectory(profile, directory, options)</code>
+          accepts an existing sample directory.</li>
       </ul>
-      <p>
-        <code>TrainOptions</code> lets you control the maximum time, parallelism, requested sample count, and whether to compute
-        the Pareto frontier. The helper writes samples to a temporary directory, hands it to the native trainer, and returns
-        serialized compressors that you can feed back into <code>configureProfile</code>.
-      </p>
+      <p>Both return <code>TrainedCompressor[]</code>. Load a chosen candidate
+        with <code>configureTrained(candidate)</code>. Each candidate owns
+        defensive copies of its profile name, serialized graph and optional
+        dictionary bundle. Check that the returned array is nonempty before
+        selecting a candidate.</p>
+      <table>
+        <thead><tr><th>TrainOptions field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>maxTimeSecs</code></td><td>ACE search budget for the whole search; default 1 second. Preprocessing, measurements and dictionary optimization can take additional time.</td></tr>
+          <tr><td><code>threads</code></td><td>Training worker count; default 1.</td></tr>
+          <tr><td><code>numSamples</code></td><td>Requested sample count; 0 leaves the native default.</td></tr>
+          <tr><td><code>paretoFrontier</code></td><td>Request candidates offering different speed/size tradeoffs.</td></tr>
+          <tr><td><code>maxNumCandidates</code></td><td>Limit returned candidates in upstream order; 0 leaves the native default. Limits of 1–5 are supported.</td></tr>
+          <tr><td><code>formatVersion</code></td><td>Target format; 0 uses the native default, 24 targets OpenZL 0.2.0 readers.</td></tr>
+          <tr><td><code>dictionaryTraining</code></td><td>Enable dictionary training with a supporting profile such as <code>zstd</code>; default false.</td></tr>
+        </tbody>
+      </table>
+      <p>The older <code>train</code> and <code>trainFromDirectory</code>
+        methods still return self-contained graphs as <code>byte[][]</code>.
+        They reject dictionary training because that return type cannot carry
+        the bundle. <code>configureProfile</code> selects a preset; it does
+        not reload a trained graph.</p>
+    </section>
+
+    <section id="dictionaries">
+      <h2>Train, save and reload dictionary bundles</h2>
+      <p>Use samples representative of the data you will compress. Persist the
+        profile name, graph and bundle together. A separate reader needs the
+        matching bundle to decode dictionary-backed frames.</p>
+      <pre><code id="example-dictionary" class="language-java">import io.github.hybledav.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+
+byte[][] samples = new byte[128][];
+for (int i = 0; i &lt; samples.length; i++) {
+    samples[i] = ("order=" + i + " customer=account-" + i
+            + " region=eu-central currency=EUR status=accepted "
+            + "product=openzl-sample quantity=3 price=19.99 "
+            + "Reusable dictionary compression sample for purchase orders. ".repeat(3))
+            .getBytes(StandardCharsets.UTF_8);
+}
+TrainOptions options = new TrainOptions();
+options.dictionaryTraining = true;
+options.maxNumCandidates = 1;
+options.maxTimeSecs = 2;
+TrainedCompressor[] candidates =
+        OpenZLCompressor.trainCandidates("zstd", samples, options);
+if (candidates.length == 0) throw new IllegalStateException("No trained candidates");
+TrainedCompressor candidate = candidates[0];
+
+// Save the profile name, graph AND bundle together.
+Path model = Files.createDirectories(Path.of("model"));
+Files.writeString(model.resolve("profile.txt"), candidate.profileName());
+Files.write(model.resolve("graph.bin"), candidate.serializedCompressor());
+Files.write(model.resolve("dictionary.bin"), candidate.dictionaryBundle());
+
+// Reload later, or in a different process.
+TrainedCompressor loaded = new TrainedCompressor(
+        Files.readString(model.resolve("profile.txt")),
+        Files.readAllBytes(model.resolve("graph.bin")),
+        Files.readAllBytes(model.resolve("dictionary.bin")));
+try (OpenZLCompressor writer = new OpenZLCompressor();
+     OpenZLCompressor reader = new OpenZLCompressor()) {
+    writer.configureTrained(loaded);
+    reader.setDictionaryBundle(loaded.dictionaryBundle());
+    byte[] frame = writer.compress(samples[0]);
+    if (!Arrays.equals(samples[0], reader.decompress(frame))) {
+        throw new IllegalStateException("Dictionary round trip failed");
+    }
+}</code></pre>
+      <p><code>TrainedCompressor</code> is immutable and can be shared across
+        independent compressor instances. <code>reset()</code> retains a
+        loaded graph and bundle; <code>close()</code> releases their state.
+        <code>setDictionaryBundle(new byte[0])</code> clears the decoding bundle.</p>
+      <p>Dictionary-backed frames require format 25 or newer. Use
+        self-contained training with <code>dictionaryTraining = false</code>
+        for format 24. Published <code>0.3.0-1</code> requires self-contained
+        Protobuf training; <a href="#unreleased-interfaces">the unreleased work adds Protobuf
+        dictionary candidates and conversion</a>.</p>
+    </section>
+
+    <section id="saved-graphs">
+      <h2>Brute-force selection and saved graphs</h2>
+      <p><code>configureBruteForce</code> tries the supplied graphs for each
+        input and selects the smallest encoding. This spends extra compression
+        work to improve size. Save its binary configuration with
+        <code>serializeCompressor()</code> and reload it using
+        <code>configureTrained</code>.</p>
+      <pre><code id="example-brute" class="language-java">import io.github.hybledav.*;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+
+byte[] payload = "try several graphs for this block\n".repeat(256)
+        .getBytes(StandardCharsets.UTF_8);
+byte[] graph;
+byte[] frame;
+try (OpenZLCompressor writer = new OpenZLCompressor()) {
+    writer.configureBruteForce(
+            OpenZLGraph.ZSTD, OpenZLGraph.HUFFMAN, OpenZLGraph.STORE);
+    graph = writer.serializeCompressor();
+    frame = writer.compress(payload);
+}
+try (OpenZLCompressor restored = new OpenZLCompressor()) {
+    restored.configureTrained(new TrainedCompressor("serial", graph, new byte[0]));
+    if (!Arrays.equals(payload, restored.decompress(frame))) {
+        throw new IllegalStateException("Restored graph round trip failed");
+    }
+}</code></pre>
+      <p>This example uses the <code>serial</code> profile to restore a byte
+        graph without a dictionary. For a trained dictionary candidate,
+        preserve its original profile name and bundle instead.</p>
+    </section>
+
+    <section id="compatibility">
+      <h2>Upgrading from OpenZL 0.2.0</h2>
+      <p>Install matching base and platform artifacts, for example
+        <code>0.3.0-1</code> for both. OpenZL 0.3.0 reads frames from 0.2.0.
+        Its new default format 27 requires a newer reader.</p>
+      <pre><code id="example-compatibility" class="language-java">import io.github.hybledav.*;
+import java.nio.charset.StandardCharsets;
+
+byte[] payload = "data for an OpenZL 0.2.0 reader"
+        .getBytes(StandardCharsets.UTF_8);
+try (OpenZLCompressor writer = new OpenZLCompressor()) {
+    writer.setFormatVersion(24);
+    byte[] legacyFrame = writer.compress(payload);
+    if (writer.inspect(legacyFrame).formatVersion() != 24) {
+        throw new IllegalStateException("Expected format 24");
+    }
+    writer.setFormatVersion(0); // Restore the native default: 27.
+}</code></pre>
+      <ul>
+        <li><strong>Compressed frames:</strong> select format 24 when writing
+          for a 0.2.0 reader, using a graph that supports it. Features such as
+          dictionary bundles require a newer format.</li>
+        <li><strong>Saved compressor graphs:</strong> these have separate
+          compatibility rules. Numeric graphs serialized by 0.3.0 require
+          0.3.0 even if their frames target format 24.</li>
+        <li><strong>Training:</strong> set <code>TrainOptions.formatVersion = 24</code>
+          before training for older readers. Legacy Protobuf output requires
+          explicitly trained format-24 graphs passed to the conversion overload
+          accepting a trained compressor. Automatic Protobuf conversion defaults
+          to format 27.</li>
+        <li><strong>API scope:</strong> custom materializer registration and
+          zero-copy multi-input compression remain outside this Java API.
+          The upcoming wrapper revision adds typed multi-input snapshots, native
+          diagnostics, typed options, LZ controls, the optional codec-output cache
+          and Protobuf dictionary support.</li>
+      </ul>
+      <p>See the <a href="https://github.com/hybledav/openzl-jni/blob/main/docs/OPENZL_0_3_PORT.md">port review</a>
+        and <a href="https://github.com/hybledav/openzl-jni/blob/main/docs/VALIDATION_0_3_0_1.md">release validation record</a>
+        for feature coverage and testing.</p>
     </section>
 
     <footer>

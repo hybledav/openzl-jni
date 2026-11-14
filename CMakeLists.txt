@@ -67,6 +67,8 @@ endif()
 set(OPENZL_JNI_DIR ${PROJECT_SOURCE_DIR}/JNI)
 
 add_library(openzl_jni SHARED
+    ${OPENZL_JNI_DIR}/DictionarySupport.cpp
+    ${OPENZL_JNI_DIR}/OpenZLAdvanced.cpp
     ${OPENZL_JNI_DIR}/OpenZLCompressor.cpp
     ${OPENZL_JNI_DIR}/OpenZLNativeSupport.cpp
     ${OPENZL_JNI_DIR}/OpenZLProtobuf.cpp

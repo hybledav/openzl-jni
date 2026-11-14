@@ -39,6 +39,11 @@ struct NativeState {
     ZL_GraphID startingGraph{ ZL_GRAPH_ZSTD };
     ScratchBuffer outputScratch;
     std::unique_ptr<openzl::FatBundleDictLoader> dictionaryLoader;
+    size_t tryGraphCacheBudget = 0;
+    // Warning storage belongs to reusable upstream contexts. Hide warnings from
+    // an earlier owner or session until this owner performs the relevant operation.
+    bool compressionWarningsVisible = false;
+    bool decompressionWarningsVisible = false;
 
     explicit NativeState(ZL_GraphID graph);
     ~NativeState();

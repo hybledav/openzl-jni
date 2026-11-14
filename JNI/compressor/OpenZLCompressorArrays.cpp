@@ -18,6 +18,7 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compr
     if (!ensureState(state, "compressInto")) {
         return -1;
     }
+    state->compressionWarningsVisible = true;
     if (!checkArrayRange(env, src, srcOff, srcLen, "src")) {
         return -1;
     }
@@ -69,6 +70,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (!ensureState(state, "compress")) {
         return nullptr;
     }
+    state->compressionWarningsVisible = true;
 
     if (input == nullptr) {
         throwNew(env, JniRefs().nullPointerException, "input is null");
@@ -119,6 +121,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (!ensureState(state, "decompress")) {
         return nullptr;
     }
+    state->decompressionWarningsVisible = true;
 
     if (input == nullptr) {
         throwNew(env, JniRefs().nullPointerException, "input is null");
@@ -173,6 +176,12 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     return jresult;
 }
 
+extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressNative(
+        JNIEnv* env, jobject obj, jbyteArray input)
+{
+    return Java_io_github_hybledav_OpenZLCompressor_decompress(env, obj, input);
+}
+
 extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressIntoNative(JNIEnv* env,
         jobject obj,
         jbyteArray src,
@@ -186,6 +195,7 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
     if (!ensureState(state, "decompressInto")) {
         return -1;
     }
+    state->decompressionWarningsVisible = true;
     if (!checkArrayRange(env, src, srcOff, srcLen, "src")) {
         return -1;
     }

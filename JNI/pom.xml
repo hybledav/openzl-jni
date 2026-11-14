@@ -5,7 +5,7 @@
 
     <groupId>io.github.hybledav</groupId>
     <artifactId>openzl-jni-parent</artifactId>
-    <version>0.3.0-1</version>
+    <version>0.3.0-2</version>
     <packaging>pom</packaging>
 
     <name>OpenZL JNI Parent</name>
@@ -35,7 +35,11 @@
     </scm>
 
     <properties>
-        <revision>0.3.0-1</revision>
+        <revision>0.3.0-2</revision>
+        <jacoco.version>0.8.14</jacoco.version>
+        <!-- Defaults keep late Surefire expansion valid when coverage is skipped. -->
+        <argLine></argLine>
+        <test.jvm.args></test.jvm.args>
     </properties>
 
     <modules>
@@ -49,7 +53,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.11</version>
+                <version>${jacoco.version}</version>
                 <executions>
                     <execution>
                         <goals>
@@ -69,6 +73,15 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>explicit-native-access</id>
+            <activation>
+                <jdk>[24,)</jdk>
+            </activation>
+            <properties>
+                <test.jvm.args>--enable-native-access=ALL-UNNAMED --illegal-native-access=deny</test.jvm.args>
+            </properties>
+        </profile>
         <profile>
             <id>release</id>
             <properties>

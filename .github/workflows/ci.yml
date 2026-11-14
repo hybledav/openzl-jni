@@ -295,9 +295,9 @@ jobs:
       - name: Generate coverage report
         run: |
           mvn -ntp -f JNI/pom.xml -pl openzl-jni -am \
-            org.jacoco:jacoco-maven-plugin:0.8.11:prepare-agent \
+            org.jacoco:jacoco-maven-plugin:0.8.14:prepare-agent \
             test \
-            org.jacoco:jacoco-maven-plugin:0.8.11:report
+            org.jacoco:jacoco-maven-plugin:0.8.14:report
 
       - name: Attach coverage artifact
         uses: actions/upload-artifact@v4

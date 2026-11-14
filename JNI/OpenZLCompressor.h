@@ -22,6 +22,8 @@ JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressIntoNa
         jbyteArray, jint, jint, jbyteArray, jint, jint);
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compress(JNIEnv*, jobject, jbyteArray);
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_decompress(JNIEnv*, jobject, jbyteArray);
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressNative(JNIEnv*, jobject, jbyteArray);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setResolvedDictionaryBundleNative(JNIEnv*, jobject, jbyteArray, jbyteArray);
 JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compressDirect(JNIEnv*, jobject,
         jobject, jint, jint, jobject, jint, jint);
 JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressDirect(JNIEnv*, jobject,
@@ -52,6 +54,8 @@ JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainCan
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureTrainedNative(JNIEnv*, jobject,
         jstring, jbyteArray, jbyteArray);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setDictionaryBundleNative(JNIEnv*, jobject, jbyteArray);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setTryGraphCacheBudgetNative(JNIEnv*, jobject, jlong);
+JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getTryGraphCacheBudgetNative(JNIEnv*, jobject);
 JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureBruteForceNative(JNIEnv*, jobject, jintArray);
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_serializeCompressorNative(JNIEnv*, jobject);
 
@@ -61,6 +65,12 @@ JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressWi
         jstring, jbyteArray, jbyteArray);
 
 JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLSddl_compileNative(JNIEnv*, jclass, jstring, jboolean, jint);
+
+JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor_compressInputsNative(JNIEnv*, jobject, jobjectArray);
+JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_decompressOutputsNative(JNIEnv*, jobject, jbyteArray);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setOptionsNative(JNIEnv*, jobject, jboolean, jintArray);
+JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_configureLzNative(JNIEnv*, jobject, jintArray);
+JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_getWarningsNative(JNIEnv*, jobject, jboolean);
 
 #ifdef __cplusplus
 }

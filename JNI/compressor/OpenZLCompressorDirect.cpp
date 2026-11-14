@@ -27,6 +27,7 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_compr
     if (!ensureState(state, "compress")) {
         return -1;
     }
+    state->compressionWarningsVisible = true;
 
     if (!ensureDirectRange(env, src, srcPos, srcLen, "src")) {
         return -1;
@@ -78,6 +79,7 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_hybledav_OpenZLCompressor_decom
     if (!ensureState(state, "decompress")) {
         return -1;
     }
+    state->decompressionWarningsVisible = true;
 
     if (!ensureDirectRange(env, src, srcPos, srcLen, "src")) {
         return -1;

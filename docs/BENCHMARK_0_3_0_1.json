@@ -1,0 +1,245 @@
+{
+  "date": "2026-11-14",
+  "os": "Linux-6.14.0-37-generic-x86_64-with-glibc2.41",
+  "java": "openjdk version \"21.0.9\" 2025-10-21\nOpenJDK Runtime Environment (build 21.0.9+10-Ubuntu-125.04)\nOpenJDK 64-Bit Server VM (build 21.0.9+10-Ubuntu-125.04, mixed mode, sharing)\n",
+  "source": "Published Maven Central base/native JARs; old release verified against pinned SHA256",
+  "method": "256 KiB seeded synthetic blocks; single worker; cores 2,3; SerialGC; 512 MiB heap; 0.5s warmup and 5x0.3s measurement per operation; 3 fresh JVM forks per release, alternating order; median of per-fork medians; every workload round-trip verified",
+  "results": [
+    {
+      "case": "JSON / ZSTD L6",
+      "versions": {
+        "0.2.0-1": {
+          "compressed_bytes": 15181,
+          "input_bytes": 262144,
+          "format": 24,
+          "compression_mbps": 305.2608143487564,
+          "decompression_mbps": 5599.722397028084,
+          "fork_medians": {
+            "compression_mbps": [
+              304.36316386530774,
+              305.2608143487564,
+              306.5350368157215
+            ],
+            "decompression_mbps": [
+              5590.39536258467,
+              5661.9463179786,
+              5599.722397028084
+            ]
+          }
+        },
+        "0.3.0-1": {
+          "compressed_bytes": 15181,
+          "input_bytes": 262144,
+          "format": 27,
+          "compression_mbps": 310.07698246179706,
+          "decompression_mbps": 5576.642657026316,
+          "fork_medians": {
+            "compression_mbps": [
+              307.57473622206436,
+              310.07698246179706,
+              310.68889367461827
+            ],
+            "decompression_mbps": [
+              5500.864993960279,
+              5593.092182742721,
+              5576.642657026316
+            ]
+          }
+        }
+      },
+      "compression_speed_change_percent": 1.5777223563120835,
+      "decompression_speed_change_percent": -0.4121586458288973,
+      "compressed_size_change_percent": 0.0
+    },
+    {
+      "case": "Random bytes / ZSTD L6",
+      "versions": {
+        "0.2.0-1": {
+          "compressed_bytes": 262168,
+          "input_bytes": 262144,
+          "format": 24,
+          "compression_mbps": 3562.632552897205,
+          "decompression_mbps": 15704.062251491441,
+          "fork_medians": {
+            "compression_mbps": [
+              3539.826769173606,
+              3562.632552897205,
+              3599.0231645720733
+            ],
+            "decompression_mbps": [
+              15537.151319685847,
+              15860.849935595143,
+              15704.062251491441
+            ]
+          }
+        },
+        "0.3.0-1": {
+          "compressed_bytes": 262168,
+          "input_bytes": 262144,
+          "format": 27,
+          "compression_mbps": 3566.494835409247,
+          "decompression_mbps": 15426.732055976758,
+          "fork_medians": {
+            "compression_mbps": [
+              3566.494835409247,
+              3605.790699022998,
+              3446.094147908842
+            ],
+            "decompression_mbps": [
+              15426.732055976758,
+              15768.467384730991,
+              15118.379533229816
+            ]
+          }
+        }
+      },
+      "compression_speed_change_percent": 0.10841091397149061,
+      "decompression_speed_change_percent": -1.7659774335672007,
+      "compressed_size_change_percent": 0.0
+    },
+    {
+      "case": "Counters / NUMERIC L6",
+      "versions": {
+        "0.2.0-1": {
+          "compressed_bytes": 22171,
+          "input_bytes": 262144,
+          "format": 24,
+          "compression_mbps": 153.54443607311745,
+          "decompression_mbps": 1923.943091068678,
+          "fork_medians": {
+            "compression_mbps": [
+              146.52483240064342,
+              154.39365348933447,
+              153.54443607311745
+            ],
+            "decompression_mbps": [
+              1919.3672320454607,
+              1923.943091068678,
+              1929.0216142561605
+            ]
+          }
+        },
+        "0.3.0-1": {
+          "compressed_bytes": 22168,
+          "input_bytes": 262144,
+          "format": 27,
+          "compression_mbps": 171.4248314875446,
+          "decompression_mbps": 2610.490128149434,
+          "fork_medians": {
+            "compression_mbps": [
+              171.4248314875446,
+              172.05041573884313,
+              170.26609019391208
+            ],
+            "decompression_mbps": [
+              2597.9343336140573,
+              2660.881456646558,
+              2610.490128149434
+            ]
+          }
+        }
+      },
+      "compression_speed_change_percent": 11.645094978181136,
+      "decompression_speed_change_percent": 35.68437342392519,
+      "compressed_size_change_percent": -0.01353118939154685
+    },
+    {
+      "case": "Sparse integers / NUMERIC L6",
+      "versions": {
+        "0.2.0-1": {
+          "compressed_bytes": 10900,
+          "input_bytes": 262144,
+          "format": 24,
+          "compression_mbps": 431.9249665967887,
+          "decompression_mbps": 4505.787136702492,
+          "fork_medians": {
+            "compression_mbps": [
+              434.210951827798,
+              431.9249665967887,
+              430.42090056670395
+            ],
+            "decompression_mbps": [
+              4496.857622339051,
+              4505.787136702492,
+              4541.33657854758
+            ]
+          }
+        },
+        "0.3.0-1": {
+          "compressed_bytes": 10800,
+          "input_bytes": 262144,
+          "format": 27,
+          "compression_mbps": 575.7097288322279,
+          "decompression_mbps": 4371.79535777411,
+          "fork_medians": {
+            "compression_mbps": [
+              576.8846136489854,
+              575.7097288322279,
+              573.1710235515106
+            ],
+            "decompression_mbps": [
+              4348.4973175225105,
+              4371.79535777411,
+              4453.6853651811
+            ]
+          }
+        }
+      },
+      "compression_speed_change_percent": 33.28929174165229,
+      "decompression_speed_change_percent": -2.9737707278032266,
+      "compressed_size_change_percent": -0.917431192660545
+    },
+    {
+      "case": "Counters / NUMERIC L7",
+      "versions": {
+        "0.2.0-1": {
+          "compressed_bytes": 22171,
+          "input_bytes": 262144,
+          "format": 24,
+          "compression_mbps": 124.20354973720511,
+          "decompression_mbps": 1947.8432002247985,
+          "fork_medians": {
+            "compression_mbps": [
+              124.20354973720511,
+              123.06048951913647,
+              125.20212985274041
+            ],
+            "decompression_mbps": [
+              1939.1431587886732,
+              1949.0619645542224,
+              1947.8432002247985
+            ]
+          }
+        },
+        "0.3.0-1": {
+          "compressed_bytes": 21806,
+          "input_bytes": 262144,
+          "format": 27,
+          "compression_mbps": 125.63056633390048,
+          "decompression_mbps": 3159.0110193185783,
+          "fork_medians": {
+            "compression_mbps": [
+              135.27050610049147,
+              119.05538002122391,
+              125.63056633390048
+            ],
+            "decompression_mbps": [
+              3093.735069036014,
+              3159.0110193185783,
+              3169.9611590890813
+            ]
+          }
+        }
+      },
+      "compression_speed_change_percent": 1.1489338265409543,
+      "decompression_speed_change_percent": 62.17994441000181,
+      "compressed_size_change_percent": -1.6462947093049518
+    }
+  ],
+  "artifacts_sha256": {
+    ".cache/ci-baseline/openzl-jni-0.2.0-1.jar": "4467e530884c89046667f8672d577672484ad1d7014c29200f83fbb50a6972e2",
+    ".cache/ci-baseline/openzl-jni-0.2.0-1-linux_amd64.jar": "15c8ba623db4f8272c12a60a31691257d6bba53c2cdf13755e9e09dee879560e",
+    ".cache/simple-version-benchmark/artifacts/openzl-jni-0.3.0-1.jar": "b8cf9988cb30a0835e84a423f32033097d99d8a8bb63aa1c69d6e0de1b1070cd",
+    ".cache/simple-version-benchmark/artifacts/openzl-jni-0.3.0-1-linux_amd64.jar": "8d4bee9cc45c588f33f24e36f88337d8d2af1751ade19467d1da2359399449aa"
+  }
+}

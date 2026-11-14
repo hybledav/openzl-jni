@@ -53,6 +53,9 @@ changes cause CI to fail until the notices are reviewed.
 The build applies compatibility adjustments from
 `cmake/patch_openzl_windows_xgboost.cmake` and
 `cmake/patch_openzl_protobuf_context.cmake`.
+The Protobuf adjustment preserves the trained target format and adds a
+dictionary-loader attachment method to the upstream decoder context. The
+modified upstream headers carry `openzl-jni` comments identifying these changes.
 OpenZL 0.3.0 already supplies the standard-library includes and shared-future
 capture fix that older versions required from this wrapper.
 The bundled pdqsort source is marked by upstream as modified for OpenZL.

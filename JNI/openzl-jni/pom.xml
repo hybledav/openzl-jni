@@ -6,13 +6,13 @@
     <parent>
         <groupId>io.github.hybledav</groupId>
         <artifactId>openzl-jni-parent</artifactId>
-        <version>0.3.0-1</version>
+        <version>0.3.0-2</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <groupId>io.github.hybledav</groupId>
     <artifactId>openzl-jni</artifactId>
-    <version>0.3.0-1</version>
+    <version>0.3.0-2</version>
     <packaging>jar</packaging>
 
     <name>OpenZL JNI Bindings</name>
@@ -43,8 +43,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>11</maven.compiler.release>
         <native.library.name>openzl_jni</native.library.name>
         <native.resource.directory>lib</native.resource.directory>
         <gpg.skip>false</gpg.skip>
@@ -96,8 +95,23 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <release>11</release>
+                    <release>${maven.compiler.release}</release>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>default-testCompile</id>
+                        <configuration>
+                            <!-- JDK 23+ requires explicitly enabling annotation processors. -->
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                    <version>${jmh.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -218,6 +232,7 @@
                 <version>3.2.5</version>
                 <configuration>
                     <useModulePath>false</useModulePath>
+                    <argLine>@{argLine} ${test.jvm.args}</argLine>
                 </configuration>
             </plugin>
             <plugin>

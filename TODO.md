@@ -25,8 +25,12 @@
 - [x] Dictionary bundle training and loading for compression/decompression
 - [x] Expose the upstream training candidate limit and target format
 - [x] Standalone numeric Transformer and serializable brute-force graph configuration
-- [ ] Dictionary bundle support in the Protobuf-specific conversion/training API
-- [ ] Optional codec output cache control
+- [x] Dictionary bundle support in the Protobuf-specific conversion/training API
+- [x] Optional codec output cache control
+- [x] Lazy Java dictionary-bundle provider with frame bundle-ID lookup
+- [x] Typed compression/decompression options, including checksums and codec fusion
+- [x] Advanced LZ parameters and strategy selection
+- [x] Native error codes/context and warning snapshots for typed operations
 
 ## SDDL and structured data
 - [x] SDDL compilation (`OpenZLSddl.compile`)
@@ -35,6 +39,7 @@
 - [ ] Richer SDDL compiler diagnostics surfaced to Java
 
 ## Typed/numeric helpers
+- [x] Mixed typed multi-input frames and typed outputs (snapshot arrays/buffers)
 - [x] Numeric array helpers (`compressInts`, `compressLongs`, `compressFloats`, `compressDoubles`)
 
 ## Buffering & memory management

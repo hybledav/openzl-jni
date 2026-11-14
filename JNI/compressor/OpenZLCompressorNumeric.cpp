@@ -77,6 +77,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (!ensureState(state, "compressInts")) {
         return nullptr;
     }
+    state->compressionWarningsVisible = true;
     jsize length = env->GetArrayLength(data);
     jint* elements = env->GetIntArrayElements(data, nullptr);
     if (elements == nullptr) {
@@ -99,6 +100,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (!ensureState(state, "compressLongs")) {
         return nullptr;
     }
+    state->compressionWarningsVisible = true;
     jsize length = env->GetArrayLength(data);
     jlong* elements = env->GetLongArrayElements(data, nullptr);
     if (elements == nullptr) {
@@ -121,6 +123,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (!ensureState(state, "compressFloats")) {
         return nullptr;
     }
+    state->compressionWarningsVisible = true;
     jsize length = env->GetArrayLength(data);
     jfloat* elements = env->GetFloatArrayElements(data, nullptr);
     if (elements == nullptr) {
@@ -143,6 +146,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (!ensureState(state, "compressDoubles")) {
         return nullptr;
     }
+    state->compressionWarningsVisible = true;
     jsize length = env->GetArrayLength(data);
     jdouble* elements = env->GetDoubleArrayElements(data, nullptr);
     if (elements == nullptr) {
@@ -165,6 +169,7 @@ extern "C" JNIEXPORT jintArray JNICALL Java_io_github_hybledav_OpenZLCompressor_
     if (!ensureState(state, "decompressInts")) {
         return nullptr;
     }
+    state->decompressionWarningsVisible = true;
     jsize len = env->GetArrayLength(src);
     void* srcPtr = env->GetPrimitiveArrayCritical(src, nullptr);
     if (srcPtr == nullptr) {
@@ -227,6 +232,7 @@ extern "C" JNIEXPORT jlongArray JNICALL Java_io_github_hybledav_OpenZLCompressor
     if (!ensureState(state, "decompressLongs")) {
         return nullptr;
     }
+    state->decompressionWarningsVisible = true;
     if (src == nullptr) {
         throwNew(env, JniRefs().nullPointerException, "compressed");
         return nullptr;
@@ -293,6 +299,7 @@ extern "C" JNIEXPORT jfloatArray JNICALL Java_io_github_hybledav_OpenZLCompresso
     if (!ensureState(state, "decompressFloats")) {
         return nullptr;
     }
+    state->decompressionWarningsVisible = true;
     if (src == nullptr) {
         throwNew(env, JniRefs().nullPointerException, "compressed");
         return nullptr;
@@ -359,6 +366,7 @@ extern "C" JNIEXPORT jdoubleArray JNICALL Java_io_github_hybledav_OpenZLCompress
     if (!ensureState(state, "decompressDoubles")) {
         return nullptr;
     }
+    state->decompressionWarningsVisible = true;
     if (src == nullptr) {
         throwNew(env, JniRefs().nullPointerException, "compressed");
         return nullptr;

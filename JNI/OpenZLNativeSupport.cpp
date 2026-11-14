@@ -1,5 +1,6 @@
 #include "OpenZLNativeSupport.h"
 #include "openzl/zl_version.h"
+#include "openzl/zl_codec_output_cache.h"
 #include "openzl/codecs/zl_transformer.h"
 
 #include <array>
@@ -140,6 +141,8 @@ void NativeState::setGraph(ZL_GraphID graph)
 
 void NativeState::reset()
 {
+    compressionWarningsVisible = false;
+    decompressionWarningsVisible = false;
     expectSuccess(ZL_CCtx_resetParameters(cctx), "ZL_CCtx_resetParameters");
     expectSuccess(ZL_DCtx_resetParameters(dctx), "ZL_DCtx_resetParameters");
     applyDefaultParameters();
@@ -250,6 +253,8 @@ void recycleState(NativeState* state)
         return;
     }
     // Detach references before dropping graphs and dictionaries from this owner.
+    openzl::unwrap(ZL_CCtx_setTryGraphCacheBudget(state->cctx, 0));
+    state->tryGraphCacheBudget = 0;
     openzl::unwrap(ZL_CCtx_resetParameters(state->cctx));
     openzl::unwrap(ZL_DCtx_resetParameters(state->dctx));
     state->setDictionaryBundle({});

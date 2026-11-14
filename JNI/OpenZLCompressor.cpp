@@ -5,6 +5,7 @@
 #include "openzl/cpp/Compressor.hpp"
 #include "openzl/zl_compress.h"
 #include "openzl/zl_version.h"
+#include "openzl/zl_codec_output_cache.h"
 #include "openzl/codecs/zl_brute_force_selector.h"
 #include "cli/utils/compress_profiles.h"
 #include "cli/utils/util.h"
@@ -212,6 +213,31 @@ jobjectArray trainFromDirectoryImpl(JNIEnv* env,
 }
 
 } // namespace
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_hybledav_OpenZLCompressor_setTryGraphCacheBudgetNative(
+        JNIEnv* env, jobject obj, jlong bytes)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "setTryGraphCacheBudget")) return;
+    if (bytes < 0 || static_cast<uint64_t>(bytes) > std::numeric_limits<size_t>::max()) {
+        throwIllegalArgument(env, "Cache budget must fit a non-negative native size");
+        return;
+    }
+    try {
+        openzl::unwrap(ZL_CCtx_setTryGraphCacheBudget(state->cctx, static_cast<size_t>(bytes)));
+        state->tryGraphCacheBudget = static_cast<size_t>(bytes);
+    } catch (const std::exception& ex) {
+        throwIllegalState(env, ex.what());
+    }
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_github_hybledav_OpenZLCompressor_getTryGraphCacheBudgetNative(
+        JNIEnv* env, jobject obj)
+{
+    auto* state = getState(env, obj);
+    if (!ensureState(state, "getTryGraphCacheBudget")) return 0;
+    return static_cast<jlong>(state->tryGraphCacheBudget);
+}
 
 extern "C" JNIEXPORT jobjectArray JNICALL Java_io_github_hybledav_OpenZLCompressor_trainCandidatesFromDirectoryNative(
         JNIEnv* env, jclass, jstring profileName, jstring directory,
