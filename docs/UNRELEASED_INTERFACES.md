@@ -1,8 +1,8 @@
 # OpenZL JNI 0.3.0-2 interfaces
 
 These additions use upstream OpenZL 0.3.0 and are assigned wrapper version
-`0.3.0-2`. Publication is pending release validation; the preceding published
-release is `0.3.0-1`.
+`0.3.0-2`, now published on Maven Central. These APIs were added after `0.3.0-1`.
+See the [completed release validation](VALIDATION_0_3_0_2.md).
 
 ## Optional codec-output caching
 

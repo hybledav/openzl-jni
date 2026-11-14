@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenZL JNI – Java API documentation</title>
-  <meta name="description" content="OpenZL JNI 0.3.0-1 Java documentation: compression, numeric Transformer, LZ profiles, trained dictionary bundles, graph persistence and upgrade compatibility.">
+  <meta name="description" content="OpenZL JNI 0.3.0-2 Java documentation: compression, numeric Transformer, LZ profiles, trained dictionary bundles, graph persistence and upgrade compatibility.">
   <meta name="robots" content="index,follow">
   <meta name="google-site-verification" content="eJeEd3bDfdvDj78BDvt6CVLTqOmqFuHOg6vxVlIYtcU">
   <link rel="canonical" href="https://hybledav.github.io/openzl-jni/">
@@ -150,7 +150,7 @@
     <section id="unreleased-interfaces">
       <h2>Wrapper 0.3.0-2 interfaces</h2>
       <p>Wrapper 0.3.0-2 extends the Java interfaces while continuing to use
-        OpenZL 0.3.0. Publication follows release validation. These methods are not available in <code>0.3.0-1</code>.</p>
+        OpenZL 0.3.0. These methods are published in <code>0.3.0-2</code> and are not available in <code>0.3.0-1</code>.</p>
       <ul>
         <li><code>compressInputs(TypedInput...)</code> and <code>decompressOutputs(...)</code>
           support mixed serial, numeric, fixed-width and binary string streams.
@@ -568,7 +568,7 @@ try (OpenZLCompressor writer = new OpenZLCompressor();
       <p>Dictionary-backed frames require format 25 or newer. Use
         self-contained training with <code>dictionaryTraining = false</code>
         for format 24. Published <code>0.3.0-1</code> requires self-contained
-        Protobuf training; <a href="#unreleased-interfaces">the unreleased work adds Protobuf
+        Protobuf training; <a href="#unreleased-interfaces">0.3.0-2 adds Protobuf
         dictionary candidates and conversion</a>.</p>
     </section>
 
@@ -636,7 +636,7 @@ try (OpenZLCompressor writer = new OpenZLCompressor()) {
           to format 27.</li>
         <li><strong>API scope:</strong> custom materializer registration and
           zero-copy multi-input compression remain outside this Java API.
-          The upcoming wrapper revision adds typed multi-input snapshots, native
+          Wrapper 0.3.0-2 adds typed multi-input snapshots, native
           diagnostics, typed options, LZ controls, the optional codec-output cache
           and Protobuf dictionary support.</li>
       </ul>

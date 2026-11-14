@@ -7,7 +7,7 @@
 
 > Meta’s OpenZL compression engine for the JVM — zero-copy JNI bindings, pooled buffers.
 
-## New in 0.3.0-2 (release candidate)
+## New in 0.3.0-2
 
 This wrapper revision adds optional codec-output caching, a Java
 `DictionaryBundleProvider`, complete dictionary candidates for Protobuf
@@ -34,7 +34,9 @@ and configurable LZ controls. It continues to use upstream OpenZL 0.3.0.
   settings and entropy thresholds.
 
 See the [new interface guide](docs/UNRELEASED_INTERFACES.md) for examples, lifecycle
-rules and testing scope. These APIs target `0.3.0-2`; publication follows release validation. They are not available in `0.3.0-1`.
+rules and testing scope. These APIs are available in `0.3.0-2` on
+[Maven Central](https://repo.maven.apache.org/maven2/io/github/hybledav/openzl-jni/0.3.0-2/).
+See the [release validation record](docs/VALIDATION_0_3_0_2.md).
 
 ## New in 0.3.0-1
 
@@ -343,8 +345,7 @@ try (OpenZLCompressor writer = new OpenZLCompressor();
 their state before the native contexts enter the pool. Dictionary-backed frames
 require a decoder with the matching bundle and format 25 or newer. Existing
 `byte[][]` training methods, including legacy Protobuf training, reject
-dictionary training because their return type cannot carry bundles. In the
-unreleased additions, Protobuf's separate `trainCandidates` API preserves bundles.
+dictionary training because their return type cannot carry bundles. Starting with `0.3.0-2`, Protobuf's separate `trainCandidates` API preserves bundles.
 
 `OpenZLGraph.TRANSFORMER_NUMERIC` selects the Transformer directly. To try several
 built-in graphs on each input, call

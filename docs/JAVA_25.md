@@ -1,9 +1,10 @@
 # Java 25 support (0.3.0-2)
 
-The current local source builds and runs on Java 25. The minimum runtime remains
+Wrapper 0.3.0-2 builds and runs on Java 25. The minimum runtime remains
 Java 11: all library classes produced by JDK 25 still use class-file version 55
 through `--release 11`. No Java 25 language feature or preview API is required.
-These changes target wrapper version `0.3.0-2`. Publication follows release validation.
+These changes are published in wrapper version `0.3.0-2`; see the
+[completed release validation](VALIDATION_0_3_0_2.md).
 
 ## Build changes
 

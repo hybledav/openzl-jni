@@ -58,8 +58,8 @@ access denied:
 
 No JNI checking diagnostics or sanitizer findings were observed. The existing
 [sanitizer limits](JAVA_25.md) apply. macOS and Windows remain untested locally.
-These fixes are included in the 0.3.0-2 release candidate. No coverage gate was added;
-publication follows cross-platform release validation.
+These fixes are published in `0.3.0-2`. No coverage gate was added. See the
+[completed cross-platform release validation](VALIDATION_0_3_0_2.md).
 
 The regression tests are in `TestManagedCompression` and
 `TestDictionaryBundleProvider`. Local logs, artifact hashes and reproduction
